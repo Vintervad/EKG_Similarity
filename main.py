@@ -16,6 +16,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--pin-memory", action="store_true")
+    parser.add_argument("--early-stopping-patience", type=int, default=10)
+    parser.add_argument("--early-stopping-min-delta", type=float, default=0.0)
     parser.add_argument("--steps", type=int, default=1)
     parser.add_argument("--device", type=str, default="cpu")
     return parser.parse_args()
@@ -32,6 +34,8 @@ def main() -> None:
         epochs=args.epochs,
         num_workers=args.num_workers,
         pin_memory=args.pin_memory,
+        early_stopping_patience=args.early_stopping_patience,
+        early_stopping_min_delta=args.early_stopping_min_delta,
         steps=args.steps,
     )
     if args.data_root:
@@ -49,6 +53,15 @@ def main() -> None:
             test_formatted = ", ".join(f"test_{key}={value:.4f}" for key, value in results["test"].items())
             print(test_formatted)
         print(f"splits_loaded={','.join(results['available_splits'])}")
+        if results.get("best_checkpoint"):
+            print(f"best_checkpoint={results['best_checkpoint']}")
+        print(f"checkpoint_dir={results['checkpoint_dir']}")
+        print(f"selection_metric={results['selection_metric_name']}")
+        print(f"early_stopping_patience={results['early_stopping_patience']}")
+        print(f"early_stopping_min_delta={results['early_stopping_min_delta']}")
+        print(f"stopped_early={results['stopped_early']}")
+        if results.get("stopped_epoch") is not None:
+            print(f"stopped_epoch={results['stopped_epoch']}")
         return
 
     metrics_history = smoke_test(config)

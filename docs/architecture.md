@@ -7,7 +7,9 @@ The current training pipeline is:
 - raw ECG
 - augmentation into two views
 - shared encoder-decoder
+- global embedding learning
 - local, global, and reconstruction losses
+- best-checkpoint selection for downstream retrieval
 
 ## Diagram
 
@@ -25,7 +27,7 @@ flowchart TD
         F1["Sinusoidal positional encoding"]
         G1["Transformer encoder<br/>output tokens: [B, T, 128]"]
         H1["Mean over time<br/>global embedding g1 [B, 128]"]
-        I1["Projection head<br/>z1 [B, 128]"]
+        I1["Normalized global embedding<br/>z1 [B, 128]"]
         J1["Decoder<br/>reconstruction r1 [B, 12, T]"]
     end
 
@@ -36,7 +38,7 @@ flowchart TD
         F2["Sinusoidal positional encoding"]
         G2["Transformer encoder<br/>output tokens: [B, T, 128]"]
         H2["Mean over time<br/>global embedding g2 [B, 128]"]
-        I2["Projection head<br/>z2 [B, 128]"]
+        I2["Normalized global embedding<br/>z2 [B, 128]"]
         J2["Decoder<br/>reconstruction r2 [B, 12, T]"]
     end
 
@@ -56,8 +58,8 @@ flowchart TD
 
     D1 -. local contrastive loss .- D2
     I1 -. global contrastive loss .- I2
-    J1 -. reconstruction loss vs view1 .- V1
-    J2 -. reconstruction loss vs view2 .- V2
+    J1 -. reconstruction loss vs original ECG .- A
+    J2 -. reconstruction loss vs original ECG .- A
 ```
 
 ## Tensor Shapes
@@ -142,6 +144,26 @@ Now each time step becomes one token, and each token has a 128-dimensional featu
 - So the CNN uses `[B, 12, T]`.
 - The transformer uses `[B, T, 128]`.
 - The transpose is what converts from the CNN layout to the transformer layout.
+
+## Downstream Retrieval Flow
+
+The downstream retrieval task does not train a separate retrieval head in the current implementation.
+
+Instead, the workflow is:
+
+- train the encoder with local contrastive loss, global contrastive loss, and reconstruction loss
+- apply the global contrastive loss directly to the transformer global embeddings
+- save checkpoints during training and keep the best checkpoint as `checkpoints/best.pt`
+- choose the best checkpoint by the total validation loss when a validation split exists
+- load that best checkpoint after training
+- embed the ECG database with the normalized transformer global embeddings
+- run kNN retrieval in that embedding space
+
+In code, that means:
+
+- training uses `outputs.global_embedding` from [encoder.py](C:/Users/sebas/OneDrive/Dokumenter/Uni-Sunhedsteknologi-Kandiddat/10.semester/Git_code/EKG_Similarity/models/encoder.py)
+- retrieval uses `model.embed(..., embedding_type="global")`
+- reusable retrieval indices can be created with [embed_dataset.py](C:/Users/sebas/OneDrive/Dokumenter/Uni-Sunhedsteknologi-Kandiddat/10.semester/Git_code/EKG_Similarity/embed_dataset.py)
 
 ## Recommended Data Convention
 

@@ -5,10 +5,11 @@ PyTorch implementation of a self-supervised ECG representation learning model th
 - an InceptionTime-style 1D CNN for local multi-scale morphology
 - a transformer encoder for long-range temporal context
 - a local contrastive loss on CNN features
-- a global contrastive loss on transformer features
+- a global contrastive loss on transformer embeddings
 - a reconstruction decoder as a regularizer
+- downstream kNN retrieval over saved global embeddings from the best checkpoint
 
-The codebase is currently organized as a modular research scaffold. The model, losses, trainer, CSV-backed dataset loader, and train/val/test dataloader setup are implemented. The repository also includes a smoke-test entrypoint.
+The codebase is currently organized as a modular research scaffold. The model, losses, trainer, CSV-backed dataset loader, train/val/test dataloader setup, and embedding-based retrieval utilities are implemented. The repository also includes a smoke-test entrypoint.
 
 ## What The Code Does
 
@@ -18,7 +19,8 @@ Given an ECG batch, the training pipeline:
 2. passes both views through the same encoder-decoder weights
 3. extracts CNN-level local features and transformer-level global features
 4. computes local contrastive, global contrastive, and reconstruction losses
-5. combines those losses into a single objective for training
+5. saves checkpoints during training, including a per-batch checkpoint stream and `checkpoints/best.pt`
+6. uses the best checkpoint to embed ECGs for downstream similarity retrieval with kNN
 
 The intended model input shape is:
 
@@ -120,7 +122,7 @@ This uses synthetic data and checks that:
 To train on the recommended folder structure, use:
 
 ```bash
-python main.py --data-root data --batch-size 8 --channels 12 --sequence-length 5000 --epochs 10 --device cpu
+python main.py --data-root data --batch-size 8 --channels 12 --sequence-length 5000 --epochs 10 --early-stopping-patience 10 --device cpu
 ```
 
 With that command, the code will:
@@ -131,7 +133,46 @@ With that command, the code will:
 - load the ECG files referenced in those CSV files
 - build train, validation, and test dataloaders
 - train for the requested number of epochs
+- save a checkpoint after each training batch
 - evaluate on validation and test splits when available
+- track the best checkpoint as `checkpoints/best.pt` using total validation loss when available
+- stop early when the total validation loss stops improving for the configured patience
+- fall back to total training loss for checkpoint selection and early stopping only when no validation split exists
+
+To run downstream ECG retrieval with kNN in the learned embedding space, use:
+
+```bash
+python retrieve.py --data-root data --reference-split train --query-split test --top-k 5 --device cpu
+```
+
+To embed all available ECGs with the best checkpoint and save a reusable retrieval index, use:
+
+```bash
+python embed_dataset.py --data-root data --splits all --batch-size 8 --channels 12 --device cpu --output-dir embeddings
+```
+
+That command writes:
+
+- one retrieval-index file per split, for example `embeddings/train_global_index.pt`
+- one combined retrieval index, for example `embeddings/all_global_index.pt`
+
+To query against the saved combined index, use:
+
+```bash
+python retrieve.py --data-root data --reference-index embeddings/all_global_index.pt --query-split test --top-k 5 --device cpu
+```
+
+If you prefer not to save the combined index first, you can build a reference index from all available splits on the fly:
+
+```bash
+python retrieve.py --data-root data --reference-split all --query-split test --top-k 5 --device cpu
+```
+
+If you have a saved model checkpoint, you can load it with:
+
+```bash
+python retrieve.py --data-root data --reference-split train --query-split test --top-k 5 --checkpoint path/to/checkpoint.pt --device cpu
+```
 
 ### 5. Prepare Your ECG Tensor Shape
 
@@ -239,7 +280,7 @@ The main places to start changing behavior are:
   Implements sinusoidal positional encoding and the transformer encoder.
 
 - `models/projection_head.py`
-  Maps the transformer global embedding into the contrastive embedding space.
+  Legacy projection-head module retained from the earlier contrastive setup. It is not used in the current training or retrieval path.
 
 - `models/decoder.py`
   Reconstructs the ECG from transformer tokens.
@@ -266,6 +307,17 @@ The main places to start changing behavior are:
 - `training/train.py`
   Builds the trainer, model, optimizer, and default augmentation setup.
 
+### Retrieval
+
+- `utils/retrieval.py`
+  Defines embedding extraction, retrieval-index creation, checkpoint loading, and kNN search utilities.
+
+- `retrieve.py`
+  Builds a searchable embedding index from one split and queries similar ECGs from another split.
+
+- `embed_dataset.py`
+  Loads the best checkpoint, embeds the selected dataset splits, and saves reusable retrieval-index files.
+
 ### Documentation
 
 - `docs/architecture.md`
@@ -276,7 +328,7 @@ The main places to start changing behavior are:
 These are the most important places to start reading:
 
 - `ECGContrastiveAutoencoder` in `models/encoder.py`
-  This is the main model. It connects the CNN, transformer, projection head, and decoder.
+  This is the main model. It connects the CNN, transformer, and decoder, and exposes the global embedding used for retrieval.
 
 - `InceptionEncoder` in `models/inception.py`
   This is the CNN feature extractor. It is where the local ECG morphology is modeled.
@@ -297,7 +349,13 @@ These are the most important places to start reading:
   This is useful when checking whether architectural changes still run end-to-end.
 
 - `train_with_dataloaders` in `training/train.py`
-  This is the main entrypoint for training from the folder structure described in this README.
+  This is the main entrypoint for training from the folder structure described in this README, including checkpoint saving.
+
+- `extract_embeddings` and `build_retrieval_index` in `utils/retrieval.py`
+  These are the core utilities for turning the trained global embeddings into searchable kNN indices.
+
+- `embed_dataset.py`
+  This is the easiest way to create a saved retrieval index from the best checkpoint after training.
 
 ## Where To Change Parameters
 
@@ -332,17 +390,11 @@ Change these in `ECGEncoderConfig` inside `models/encoder.py`:
 - `transformer_feedforward_dim`
   Feedforward width inside each transformer block.
 
-- `projection_dim`
-  Size of the final contrastive embedding.
-
-- `projection_hidden_dim`
-  Hidden size inside the projection head.
-
 - `local_pool_bins`
   Number of pooled temporal bins used to form the CNN local embedding.
 
 - `dropout`
-  Dropout used in the transformer, projection head, and decoder.
+  Dropout used in the transformer and decoder.
 
 - `max_sequence_length`
   Maximum sequence length covered by the default positional encoding table.
@@ -391,7 +443,33 @@ Change these in `TrainConfig` and `build_trainer` inside `training/train.py`:
 - `learning_rate`
 - `weight_decay`
 - `device`
+- `epochs`
+- `checkpoint_dir`
+- `save_every_batch`
+- `early_stopping_patience`
+- `early_stopping_min_delta`
 - optimizer choice
+
+Set `--early-stopping-patience -1` if you want to disable early stopping from the command line.
+
+### Retrieval Parameters
+
+Change these in `retrieve.py` and `utils/retrieval.py`:
+
+- `embedding_type`
+  Choose whether retrieval uses the `global` or `local` embedding. `retrieval` is kept as an alias for the global embedding.
+
+- `reference_index`
+  Use a previously saved retrieval index instead of rebuilding the reference embeddings on the fly.
+
+- `top_k`
+  Number of nearest ECGs returned for each query.
+
+- `reference_split`
+  The split used to build the searchable embedding index. Use `all` to search across every available split.
+
+- `query_split`
+  The split used as retrieval queries.
 
 ## Running The Code
 
@@ -403,6 +481,24 @@ python main.py --batch-size 2 --channels 12 --sequence-length 512 --steps 1 --de
 
 This does not train on a real dataset. It only confirms that the model, losses, and trainer run end-to-end on synthetic data.
 
+Run split-based training on real ECG files with:
+
+```bash
+python main.py --data-root data --batch-size 8 --channels 12 --sequence-length 5000 --epochs 10 --early-stopping-patience 10 --device cpu
+```
+
+Run downstream retrieval with kNN in the learned embedding space with:
+
+```bash
+python retrieve.py --data-root data --reference-split train --query-split test --top-k 5 --device cpu
+```
+
+Create reusable retrieval indices from the best checkpoint with:
+
+```bash
+python embed_dataset.py --data-root data --splits all --batch-size 8 --channels 12 --device cpu --output-dir embeddings
+```
+
 ## Practical Notes
 
 - The trainer accepts raw `signal` batches and generates augmented views internally.
@@ -410,7 +506,12 @@ This does not train on a real dataset. It only confirms that the model, losses, 
 - The recommended on-disk data layout is `data/raw/{train,val,test}` with matching CSV files in `data/metadata/`.
 - Relative `--data-root` paths are resolved from the repository root.
 - The local contrastive branch currently uses pooled CNN features rather than token-level local contrast.
-- The reconstruction target defaults to the same augmented input view.
+- For raw `signal` batches, the reconstruction target is the original ECG, not the augmented view.
+- The global contrastive loss is applied directly to the transformer global embeddings.
+- There is no separately trained retrieval head in the current pipeline.
+- Downstream retrieval uses the best saved checkpoint and kNN over the normalized transformer global embedding space.
+- `retrieve.py` can either build a reference index on the fly or read a previously saved index from `embed_dataset.py`.
+- Early stopping and best-checkpoint selection use total validation loss when a validation split is available.
 
 ## Suggested Reading Order
 

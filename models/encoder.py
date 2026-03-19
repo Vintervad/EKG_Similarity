@@ -4,11 +4,11 @@ from dataclasses import dataclass
 from typing import Sequence
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 from models.decoder import ReconstructionDecoder
 from models.inception import InceptionEncoder
-from models.projection_head import ProjectionHead
 from models.transformer import TemporalTransformerEncoder
 
 
@@ -23,8 +23,6 @@ class ECGEncoderConfig:
     transformer_layers: int = 4
     transformer_heads: int = 8
     transformer_feedforward_dim: int = 256
-    projection_dim: int = 128
-    projection_hidden_dim: int = 256
     local_pool_bins: int = 8
     dropout: float = 0.1
     max_sequence_length: int = 5000
@@ -36,7 +34,6 @@ class EncoderOutputs:
     local_embedding: torch.Tensor
     transformer_tokens: torch.Tensor
     global_embedding: torch.Tensor
-    projection: torch.Tensor
     reconstruction: torch.Tensor
 
 
@@ -63,12 +60,6 @@ class ECGContrastiveAutoencoder(nn.Module):
             max_length=config.max_sequence_length,
         )
         self.global_normalization = nn.LayerNorm(config.transformer_dim)
-        self.projection_head = ProjectionHead(
-            input_dim=config.transformer_dim,
-            hidden_dim=config.projection_hidden_dim,
-            output_dim=config.projection_dim,
-            dropout=config.dropout,
-        )
         self.decoder = ReconstructionDecoder(
             input_dim=config.transformer_dim,
             output_channels=config.input_channels,
@@ -83,13 +74,21 @@ class ECGContrastiveAutoencoder(nn.Module):
         local_embedding = torch.flatten(self.local_pool(cnn_features), start_dim=1)
         transformer_tokens = self.transformer(cnn_features.transpose(1, 2))
         global_embedding = self.global_normalization(transformer_tokens.mean(dim=1))
-        projection = self.projection_head(global_embedding)
         reconstruction = self.decoder(transformer_tokens)
         return EncoderOutputs(
             cnn_features=cnn_features,
             local_embedding=local_embedding,
             transformer_tokens=transformer_tokens,
             global_embedding=global_embedding,
-            projection=projection,
             reconstruction=reconstruction,
         )
+
+    def embed(self, x: torch.Tensor, embedding_type: str = "global", normalize: bool = True) -> torch.Tensor:
+        outputs = self.forward(x)
+        if embedding_type in {"retrieval", "global"}:
+            embedding = outputs.global_embedding
+        elif embedding_type == "local":
+            embedding = outputs.local_embedding
+        else:
+            raise ValueError("embedding_type must be one of {'retrieval', 'global', 'local'}.")
+        return embedding if not normalize else F.normalize(embedding, dim=-1)

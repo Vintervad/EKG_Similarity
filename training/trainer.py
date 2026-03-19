@@ -39,7 +39,7 @@ class ContrastiveAutoencoderTrainer:
             if self.augmentor is None:
                 raise ValueError("An augmentor is required when the batch only contains raw ECG signals.")
             view1, view2 = self.augmentor(signal)
-            return view1, view2, view1, view2
+            return view1, view2, signal, signal
 
         if isinstance(batch, Mapping):
             if "view1" in batch and "view2" in batch:
@@ -53,7 +53,7 @@ class ContrastiveAutoencoderTrainer:
                 if self.augmentor is None:
                     raise ValueError("An augmentor is required when the batch provides only `signal`.")
                 view1, view2 = self.augmentor(signal)
-                return view1, view2, view1, view2
+                return view1, view2, signal, signal
             raise KeyError("Batch mapping must contain either `signal` or both `view1` and `view2`.")
 
         if isinstance(batch, Sequence) and len(batch) == 2 and all(isinstance(item, torch.Tensor) for item in batch):
