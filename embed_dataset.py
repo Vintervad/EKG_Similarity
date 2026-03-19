@@ -32,7 +32,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--channels", type=int, default=12)
     parser.add_argument("--device", type=str, default="cpu")
-    parser.add_argument("--embedding-type", type=str, default="global", choices=["retrieval", "global", "local"])
+    parser.add_argument(
+        "--embedding-type",
+        type=str,
+        default="global",
+        choices=["retrieval", "global", "projection", "local"],
+    )
     parser.add_argument("--output-dir", type=str, default="embeddings")
     return parser.parse_args()
 

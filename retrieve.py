@@ -28,7 +28,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--limit-queries", type=int, default=5)
-    parser.add_argument("--embedding-type", type=str, default="global", choices=["retrieval", "global", "local"])
+    parser.add_argument(
+        "--embedding-type",
+        type=str,
+        default="global",
+        choices=["retrieval", "global", "projection", "local"],
+    )
     return parser.parse_args()
 
 

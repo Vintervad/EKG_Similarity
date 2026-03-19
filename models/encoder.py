@@ -9,6 +9,7 @@ from torch import nn
 
 from models.decoder import ReconstructionDecoder
 from models.inception import InceptionEncoder
+from models.projection_head import ProjectionHead
 from models.transformer import TemporalTransformerEncoder
 
 
@@ -23,6 +24,8 @@ class ECGEncoderConfig:
     transformer_layers: int = 4
     transformer_heads: int = 8
     transformer_feedforward_dim: int = 256
+    projection_head_hidden_dim: int = 256
+    projection_head_output_dim: int = 128
     local_pool_bins: int = 8
     dropout: float = 0.1
     max_sequence_length: int = 5000
@@ -34,6 +37,7 @@ class EncoderOutputs:
     local_embedding: torch.Tensor
     transformer_tokens: torch.Tensor
     global_embedding: torch.Tensor
+    global_projection: torch.Tensor
     reconstruction: torch.Tensor
 
 
@@ -60,6 +64,12 @@ class ECGContrastiveAutoencoder(nn.Module):
             max_length=config.max_sequence_length,
         )
         self.global_normalization = nn.LayerNorm(config.transformer_dim)
+        self.projection_head = ProjectionHead(
+            input_dim=config.transformer_dim,
+            hidden_dim=config.projection_head_hidden_dim,
+            output_dim=config.projection_head_output_dim,
+            dropout=config.dropout,
+        )
         self.decoder = ReconstructionDecoder(
             input_dim=config.transformer_dim,
             output_channels=config.input_channels,
@@ -74,12 +84,14 @@ class ECGContrastiveAutoencoder(nn.Module):
         local_embedding = torch.flatten(self.local_pool(cnn_features), start_dim=1)
         transformer_tokens = self.transformer(cnn_features.transpose(1, 2))
         global_embedding = self.global_normalization(transformer_tokens.mean(dim=1))
+        global_projection = self.projection_head(global_embedding)
         reconstruction = self.decoder(transformer_tokens)
         return EncoderOutputs(
             cnn_features=cnn_features,
             local_embedding=local_embedding,
             transformer_tokens=transformer_tokens,
             global_embedding=global_embedding,
+            global_projection=global_projection,
             reconstruction=reconstruction,
         )
 
@@ -87,8 +99,10 @@ class ECGContrastiveAutoencoder(nn.Module):
         outputs = self.forward(x)
         if embedding_type in {"retrieval", "global"}:
             embedding = outputs.global_embedding
+        elif embedding_type == "projection":
+            embedding = outputs.global_projection
         elif embedding_type == "local":
             embedding = outputs.local_embedding
         else:
-            raise ValueError("embedding_type must be one of {'retrieval', 'global', 'local'}.")
+            raise ValueError("embedding_type must be one of {'retrieval', 'global', 'projection', 'local'}.")
         return embedding if not normalize else F.normalize(embedding, dim=-1)

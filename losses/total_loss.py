@@ -39,7 +39,7 @@ class ECGTrainingObjective(nn.Module):
         target_view2: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         local_loss = self.local_contrastive(outputs_view1.local_embedding, outputs_view2.local_embedding)
-        global_loss = self.global_contrastive(outputs_view1.global_embedding, outputs_view2.global_embedding)
+        global_loss = self.global_contrastive(outputs_view1.global_projection, outputs_view2.global_projection)
         reconstruction_loss_view1 = self.reconstruction_loss(outputs_view1.reconstruction, target_view1)
         reconstruction_loss_view2 = self.reconstruction_loss(outputs_view2.reconstruction, target_view2)
         reconstruction_loss = 0.5 * (reconstruction_loss_view1 + reconstruction_loss_view2)

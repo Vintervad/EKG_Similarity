@@ -142,7 +142,7 @@ def build_model_for_retrieval(
             state_dict = checkpoint
         else:
             raise TypeError("Checkpoint must be a state dict or a dict containing 'model_state_dict'.")
-        model.load_state_dict(state_dict)
+        model.load_state_dict(state_dict, strict=False)
     return model.to(device)
 
 

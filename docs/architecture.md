@@ -27,7 +27,7 @@ flowchart TD
         F1["Sinusoidal positional encoding"]
         G1["Transformer encoder<br/>output tokens: [B, T, 128]"]
         H1["Mean over time<br/>global embedding g1 [B, 128]"]
-        I1["Normalized global embedding<br/>z1 [B, 128]"]
+        I1["Projection head<br/>p1 [B, 128]"]
         J1["Decoder<br/>reconstruction r1 [B, 12, T]"]
     end
 
@@ -38,7 +38,7 @@ flowchart TD
         F2["Sinusoidal positional encoding"]
         G2["Transformer encoder<br/>output tokens: [B, T, 128]"]
         H2["Mean over time<br/>global embedding g2 [B, 128]"]
-        I2["Normalized global embedding<br/>z2 [B, 128]"]
+        I2["Projection head<br/>p2 [B, 128]"]
         J2["Decoder<br/>reconstruction r2 [B, 12, T]"]
     end
 
@@ -152,7 +152,7 @@ The downstream retrieval task does not train a separate retrieval head in the cu
 Instead, the workflow is:
 
 - train the encoder with local contrastive loss, global contrastive loss, and reconstruction loss
-- apply the global contrastive loss directly to the transformer global embeddings
+- pass the transformer global embeddings through a projection head for the global contrastive loss
 - save checkpoints during training and keep the best checkpoint as `checkpoints/best.pt`
 - choose the best checkpoint by the total validation loss when a validation split exists
 - load that best checkpoint after training
@@ -161,7 +161,7 @@ Instead, the workflow is:
 
 In code, that means:
 
-- training uses `outputs.global_embedding` from [encoder.py](C:/Users/sebas/OneDrive/Dokumenter/Uni-Sunhedsteknologi-Kandiddat/10.semester/Git_code/EKG_Similarity/models/encoder.py)
+- training uses `outputs.global_projection` for the global contrastive loss and `outputs.global_embedding` for retrieval
 - retrieval uses `model.embed(..., embedding_type="global")`
 - reusable retrieval indices can be created with [embed_dataset.py](C:/Users/sebas/OneDrive/Dokumenter/Uni-Sunhedsteknologi-Kandiddat/10.semester/Git_code/EKG_Similarity/embed_dataset.py)
 

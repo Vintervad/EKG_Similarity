@@ -5,7 +5,7 @@ PyTorch implementation of a self-supervised ECG representation learning model th
 - an InceptionTime-style 1D CNN for local multi-scale morphology
 - a transformer encoder for long-range temporal context
 - a local contrastive loss on CNN features
-- a global contrastive loss on transformer embeddings
+- a projection-head global contrastive loss on transformer embeddings
 - a reconstruction decoder as a regularizer
 - downstream kNN retrieval over saved global embeddings from the best checkpoint
 
@@ -280,7 +280,7 @@ The main places to start changing behavior are:
   Implements sinusoidal positional encoding and the transformer encoder.
 
 - `models/projection_head.py`
-  Legacy projection-head module retained from the earlier contrastive setup. It is not used in the current training or retrieval path.
+  Projection head used for the global contrastive branch. Retrieval still uses the pre-head transformer global embedding.
 
 - `models/decoder.py`
   Reconstructs the ECG from transformer tokens.
@@ -352,7 +352,7 @@ These are the most important places to start reading:
   This is the main entrypoint for training from the folder structure described in this README, including checkpoint saving.
 
 - `extract_embeddings` and `build_retrieval_index` in `utils/retrieval.py`
-  These are the core utilities for turning the trained global embeddings into searchable kNN indices.
+  These are the core utilities for turning the trained pre-head global embeddings into searchable kNN indices.
 
 - `embed_dataset.py`
   This is the easiest way to create a saved retrieval index from the best checkpoint after training.
@@ -416,7 +416,7 @@ Change these in `losses/total_loss.py`:
   Temperature used by NT-Xent for the local embeddings.
 
 - `global_temperature`
-  Temperature used by NT-Xent for the global embeddings.
+  Temperature used by NT-Xent for the projection-head outputs from the global branch.
 
 - `reconstruction_mode`
   Choose between `"mse"`, `"l1"`, or `"smooth_l1"`.
@@ -457,7 +457,7 @@ Set `--early-stopping-patience -1` if you want to disable early stopping from th
 Change these in `retrieve.py` and `utils/retrieval.py`:
 
 - `embedding_type`
-  Choose whether retrieval uses the `global` or `local` embedding. `retrieval` is kept as an alias for the global embedding.
+  Choose whether retrieval uses the `global`, `projection`, or `local` embedding. `retrieval` is kept as an alias for the global embedding.
 
 - `reference_index`
   Use a previously saved retrieval index instead of rebuilding the reference embeddings on the fly.
@@ -507,9 +507,9 @@ python embed_dataset.py --data-root data --splits all --batch-size 8 --channels 
 - Relative `--data-root` paths are resolved from the repository root.
 - The local contrastive branch currently uses pooled CNN features rather than token-level local contrast.
 - For raw `signal` batches, the reconstruction target is the original ECG, not the augmented view.
-- The global contrastive loss is applied directly to the transformer global embeddings.
+- The global contrastive loss is applied to projection-head outputs computed from the transformer global embeddings.
 - There is no separately trained retrieval head in the current pipeline.
-- Downstream retrieval uses the best saved checkpoint and kNN over the normalized transformer global embedding space.
+- Downstream retrieval uses the best saved checkpoint and kNN over the normalized pre-head transformer global embedding space.
 - `retrieve.py` can either build a reference index on the fly or read a previously saved index from `embed_dataset.py`.
 - Early stopping and best-checkpoint selection use total validation loss when a validation split is available.
 

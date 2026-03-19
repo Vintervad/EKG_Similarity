@@ -19,6 +19,7 @@ flowchart TD
         F1["Add sinusoidal positional encoding"]
         G1["Transformer encoder<br/>tokens: [B, T, 128]"]
         H1["Mean over time + LayerNorm<br/>global embedding g1 [B, 128]"]
+        P1["Projection head<br/>p1 [B, 128]"]
         I1["Decoder<br/>reconstruction r1 [B, 12, T]"]
     end
 
@@ -29,21 +30,24 @@ flowchart TD
         F2["Add sinusoidal positional encoding"]
         G2["Transformer encoder<br/>tokens: [B, T, 128]"]
         H2["Mean over time + LayerNorm<br/>global embedding g2 [B, 128]"]
+        P2["Projection head<br/>p2 [B, 128]"]
         I2["Decoder<br/>reconstruction r2 [B, 12, T]"]
     end
 
     V1 --> C1
     C1 --> D1
     C1 --> E1 --> F1 --> G1 --> H1
+    H1 --> P1
     G1 --> I1
 
     V2 --> C2
     C2 --> D2
     C2 --> E2 --> F2 --> G2 --> H2
+    H2 --> P2
     G2 --> I2
 
     D1 -. "Local NT-Xent loss" .- D2
-    H1 -. "Global NT-Xent loss" .- H2
+    P1 -. "Global NT-Xent loss" .- P2
     I1 -. "Reconstruction loss vs original ECG" .- RT
     I2 -. "Reconstruction loss vs original ECG" .- RT
 
@@ -53,8 +57,8 @@ flowchart TD
 
     D1 --> L
     D2 --> L
-    H1 --> L
-    H2 --> L
+    P1 --> L
+    P2 --> L
     I1 --> L
     I2 --> L
 
@@ -85,7 +89,8 @@ flowchart TD
 - The CNN learns local ECG morphology from each augmented view.
 - The pooled CNN features `h1` and `h2` are compared with the local contrastive loss.
 - The transformer receives the CNN features after transpose and positional encoding.
-- The mean-pooled transformer output `g1` and `g2` is used for the global contrastive loss.
+- The mean-pooled transformer output `g1` and `g2` is the retrieval embedding.
+- A projection head maps `g1` and `g2` to `p1` and `p2` for the global contrastive loss.
 - The decoder reconstructs the original ECG, not the augmented view.
 - The best checkpoint is chosen by total validation loss.
 - After training, the best checkpoint is used to create normalized global embeddings for retrieval.
