@@ -56,6 +56,8 @@ def main() -> None:
         if results.get("best_checkpoint"):
             print(f"best_checkpoint={results['best_checkpoint']}")
         print(f"checkpoint_dir={results['checkpoint_dir']}")
+        print(f"train_batch_metrics={results['train_batch_metrics_path']}")
+        print(f"epoch_metrics={results['epoch_metrics_path']}")
         print(f"selection_metric={results['selection_metric_name']}")
         print(f"early_stopping_patience={results['early_stopping_patience']}")
         print(f"early_stopping_min_delta={results['early_stopping_min_delta']}")

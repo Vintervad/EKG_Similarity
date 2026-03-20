@@ -115,6 +115,8 @@ This will:
 - save a checkpoint after every training batch
 - keep `checkpoints/latest.pt`
 - keep `checkpoints/best.pt`
+- write `checkpoints/metrics/train_batch_metrics.csv`
+- write `checkpoints/metrics/epoch_metrics.csv`
 - use total validation loss for best-checkpoint selection when `val.csv` exists
 - use early stopping on total validation loss when `val.csv` exists
 
@@ -134,6 +136,8 @@ This creates:
 
 - per-split indices such as `embeddings/train_global_index.pt`
 - a combined index such as `embeddings/all_global_index.pt`
+
+The CSV logs can be used directly for graphs in pandas, matplotlib, Excel, or similar tools.
 
 ### 4. Retrieve Similar ECGs
 
@@ -269,6 +273,8 @@ Change these in [retrieve.py](C:/Users/sebas/OneDrive/Dokumenter/Uni-Sunhedstekn
 - Retrieval uses the normalized pre-head transformer global embedding by default.
 - If the query ECG is also present in the reference index, it can retrieve itself as the nearest neighbor.
 - Because the architecture now includes a projection head, train fresh checkpoints instead of reusing checkpoints from the older no-head version.
+- Training loss is written both per batch and per epoch under `checkpoints/metrics/`.
+- Validation loss is written only per epoch in `checkpoints/metrics/epoch_metrics.csv`.
 
 ## Suggested Reading Order
 

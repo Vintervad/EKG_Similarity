@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,121 @@ def _normalize_patience(patience: int | None) -> int | None:
     if patience is None:
         return None
     return None if patience < 0 else patience
+
+
+def _metric_fieldnames() -> list[str]:
+    return [
+        "split",
+        "epoch",
+        "global_step",
+        "batch_index",
+        "loss",
+        "local_loss",
+        "global_loss",
+        "reconstruction_loss",
+        "reconstruction_loss_view1",
+        "reconstruction_loss_view2",
+        "batch_size",
+    ]
+
+
+def _epoch_metric_fieldnames() -> list[str]:
+    return [
+        "epoch",
+        "global_step",
+        "selection_metric",
+        "train_loss",
+        "train_local_loss",
+        "train_global_loss",
+        "train_reconstruction_loss",
+        "train_reconstruction_loss_view1",
+        "train_reconstruction_loss_view2",
+        "train_batch_size",
+        "val_loss",
+        "val_local_loss",
+        "val_global_loss",
+        "val_reconstruction_loss",
+        "val_reconstruction_loss_view1",
+        "val_reconstruction_loss_view2",
+        "val_batch_size",
+    ]
+
+
+def _initialize_metrics_file(path: Path, fieldnames: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+
+
+def _append_metrics_row(
+    path: Path,
+    fieldnames: list[str],
+    *,
+    split: str,
+    epoch: int,
+    global_step: int,
+    batch_index: int,
+    metrics: dict[str, float],
+) -> None:
+    row = {
+        "split": split,
+        "epoch": epoch,
+        "global_step": global_step,
+        "batch_index": batch_index,
+    }
+    for field in fieldnames:
+        if field in row:
+            continue
+        row[field] = float(metrics.get(field, 0.0))
+    with path.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writerow(row)
+
+
+def _append_epoch_metrics_row(
+    path: Path,
+    fieldnames: list[str],
+    *,
+    epoch: int,
+    global_step: int,
+    train_metrics: dict[str, float],
+    val_metrics: dict[str, float] | None,
+    selection_metric: float,
+) -> None:
+    row: dict[str, float | int | str] = {
+        "epoch": epoch,
+        "global_step": global_step,
+        "selection_metric": selection_metric,
+    }
+    for key, value in train_metrics.items():
+        row[f"train_{key}"] = float(value)
+    for field in fieldnames:
+        row.setdefault(field, "")
+    if val_metrics is not None:
+        for key, value in val_metrics.items():
+            row[f"val_{key}"] = float(value)
+    with path.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writerow(row)
+
+
+def _evaluate_split(
+    trainer: ContrastiveAutoencoderTrainer,
+    data_loader: Any,
+    *,
+    split: str,
+) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    count = 0
+    for batch in data_loader:
+        metrics = trainer.step(batch, train=False)
+        for key, value in metrics.items():
+            totals[key] = totals.get(key, 0.0) + value
+        count += 1
+    if count == 0:
+        raise ValueError(f"{split} dataloader is empty.")
+    return {key: value / count for key, value in totals.items()}
 
 
 def save_checkpoint(
@@ -140,6 +256,17 @@ def train_with_dataloaders(config: TrainConfig | None = None) -> dict[str, objec
 
     checkpoint_dir = _checkpoint_dir(config.checkpoint_dir)
     batches_dir = checkpoint_dir / "batches"
+    metrics_dir = checkpoint_dir / "metrics"
+    batch_fieldnames = _metric_fieldnames()
+    epoch_fieldnames = _epoch_metric_fieldnames()
+    train_metrics_path = metrics_dir / "train_batch_metrics.csv"
+    epoch_metrics_path = metrics_dir / "epoch_metrics.csv"
+    stale_val_batch_metrics_path = metrics_dir / "val_batch_metrics.csv"
+    _initialize_metrics_file(train_metrics_path, batch_fieldnames)
+    _initialize_metrics_file(epoch_metrics_path, epoch_fieldnames)
+    if stale_val_batch_metrics_path.exists():
+        stale_val_batch_metrics_path.unlink()
+
     history: list[dict[str, object]] = []
     global_step = 0
     best_metric = float("inf")
@@ -156,6 +283,15 @@ def train_with_dataloaders(config: TrainConfig | None = None) -> dict[str, objec
 
         for batch_index, batch in enumerate(dataloaders["train"], start=1):
             metrics = trainer.step(batch, train=True)
+            _append_metrics_row(
+                train_metrics_path,
+                batch_fieldnames,
+                split="train",
+                epoch=epoch + 1,
+                global_step=global_step + 1,
+                batch_index=batch_index,
+                metrics=metrics,
+            )
             for key, value in metrics.items():
                 epoch_totals[key] = epoch_totals.get(key, 0.0) + value
             batch_count += 1
@@ -191,9 +327,22 @@ def train_with_dataloaders(config: TrainConfig | None = None) -> dict[str, objec
             "train": train_metrics,
         }
         if "val" in dataloaders:
-            epoch_result["val"] = trainer.evaluate_epoch(dataloaders["val"])
+            epoch_result["val"] = _evaluate_split(
+                trainer,
+                dataloaders["val"],
+                split="val",
+            )
         selection_metrics = epoch_result["val"] if "val" in epoch_result else epoch_result["train"]
         selection_metric = float(selection_metrics["loss"])
+        _append_epoch_metrics_row(
+            epoch_metrics_path,
+            epoch_fieldnames,
+            epoch=epoch + 1,
+            global_step=global_step,
+            train_metrics=train_metrics,
+            val_metrics=epoch_result.get("val"),
+            selection_metric=selection_metric,
+        )
         if _is_improvement(selection_metric, best_metric, config.early_stopping_min_delta):
             best_metric = selection_metric
             epochs_without_improvement = 0
@@ -233,6 +382,8 @@ def train_with_dataloaders(config: TrainConfig | None = None) -> dict[str, objec
         "available_splits": sorted(dataloaders.keys()),
         "checkpoint_dir": str(checkpoint_dir),
         "best_checkpoint": best_checkpoint_path,
+        "train_batch_metrics_path": str(train_metrics_path),
+        "epoch_metrics_path": str(epoch_metrics_path),
         "selection_metric_name": selection_metric_name,
         "stopped_early": stopped_early,
         "stopped_epoch": stopped_epoch,
