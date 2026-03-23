@@ -141,7 +141,7 @@ class TwoViewECGAugmentor:
                 GaussianNoise(),
                 RandomTimeShift(),
                 RandomTimeMask(),
-                RandomLeadDropout(),
+                # RandomLeadDropout(),
                 BaselineWander(),
             ]
         )

@@ -1,0 +1,41 @@
+# Python environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Notebook and editor artifacts
+.ipynb_checkpoints/
+.vscode/
+.idea/
+
+# OS artifacts
+Thumbs.db
+.DS_Store
+
+# Training outputs
+checkpoints/
+embeddings/
+
+# Converted dataset artifacts
+data/raw/
+data/metadata/
+
+# Temporary experiment outputs
+experiments/tmp_dataset_test/
+experiments/tmp_embeddings_test/
+experiments/tmp_embeddings_test_projection/
+
+# Misc temporary files
+*.tmp

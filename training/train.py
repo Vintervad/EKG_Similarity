@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import csv
+import os
 from dataclasses import dataclass
 from pathlib import Path
+import time
 from typing import Any
+from uuid import uuid4
 
 import torch
 
@@ -188,8 +191,24 @@ def save_checkpoint(
         payload["best_metric"] = best_metric
     if metadata:
         payload["metadata"] = metadata
-    torch.save(payload, checkpoint_path)
-    return checkpoint_path
+
+    temp_path = checkpoint_path.with_name(f"{checkpoint_path.name}.{uuid4().hex}.tmp")
+    last_error: Exception | None = None
+    for _ in range(10):
+        try:
+            torch.save(payload, temp_path)
+            os.replace(temp_path, checkpoint_path)
+            return checkpoint_path
+        except OSError as exc:
+            last_error = exc
+            if temp_path.exists():
+                temp_path.unlink(missing_ok=True)
+            time.sleep(0.25)
+    raise RuntimeError(
+        f"Failed to save checkpoint to {checkpoint_path}. "
+        "The file may be temporarily locked by another process such as OneDrive, "
+        "antivirus scanning, or another training run."
+    ) from last_error
 
 
 def build_trainer(
