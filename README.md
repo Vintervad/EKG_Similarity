@@ -112,7 +112,8 @@ python main.py --data-root data --batch-size 8 --channels 12 --sequence-length 5
 This will:
 
 - load `train.csv`, and optionally `val.csv` and `test.csv`
-- save a checkpoint after every training batch
+- save one checkpoint after every training epoch
+- keep per-epoch checkpoints in `checkpoints/epochs/`
 - keep `checkpoints/latest.pt`
 - keep `checkpoints/best.pt`
 - write `checkpoints/metrics/train_batch_metrics.csv`
@@ -254,7 +255,7 @@ Change these in [training/train.py](C:/Users/sebas/OneDrive/Dokumenter/Uni-Sunhe
 - `weight_decay`
 - `epochs`
 - `checkpoint_dir`
-- `save_every_batch`
+- `save_every_epoch`
 - `early_stopping_patience`
 - `early_stopping_min_delta`
 

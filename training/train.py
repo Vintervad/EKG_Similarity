@@ -31,7 +31,7 @@ class TrainConfig:
     pin_memory: bool = False
     steps: int = 1
     checkpoint_dir: str = "checkpoints"
-    save_every_batch: bool = True
+    save_every_epoch: bool = True
     early_stopping_patience: int | None = 10
     early_stopping_min_delta: float = 0.0
 
@@ -274,7 +274,7 @@ def train_with_dataloaders(config: TrainConfig | None = None) -> dict[str, objec
     )
 
     checkpoint_dir = _checkpoint_dir(config.checkpoint_dir)
-    batches_dir = checkpoint_dir / "batches"
+    epochs_dir = checkpoint_dir / "epochs"
     metrics_dir = checkpoint_dir / "metrics"
     batch_fieldnames = _metric_fieldnames()
     epoch_fieldnames = _epoch_metric_fieldnames()
@@ -316,31 +316,31 @@ def train_with_dataloaders(config: TrainConfig | None = None) -> dict[str, objec
             batch_count += 1
             global_step += 1
 
-            if config.save_every_batch:
-                batch_checkpoint = batches_dir / f"epoch_{epoch + 1:04d}_batch_{batch_index:06d}.pt"
-                save_checkpoint(
-                    trainer,
-                    batch_checkpoint,
-                    epoch=epoch + 1,
-                    global_step=global_step,
-                    batch_index=batch_index,
-                    metrics=metrics,
-                    metadata={"selection_metric_name": selection_metric_name},
-                )
-                save_checkpoint(
-                    trainer,
-                    checkpoint_dir / "latest.pt",
-                    epoch=epoch + 1,
-                    global_step=global_step,
-                    batch_index=batch_index,
-                    metrics=metrics,
-                    best_metric=best_metric if best_metric != float("inf") else None,
-                    metadata={"selection_metric_name": selection_metric_name},
-                )
-
         if batch_count == 0:
             raise ValueError("Train dataloader is empty.")
         train_metrics = {key: value / batch_count for key, value in epoch_totals.items()}
+        if config.save_every_epoch:
+            epoch_checkpoint = epochs_dir / f"epoch_{epoch + 1:04d}.pt"
+            save_checkpoint(
+                trainer,
+                epoch_checkpoint,
+                epoch=epoch + 1,
+                global_step=global_step,
+                batch_index=None,
+                metrics=train_metrics,
+                best_metric=best_metric if best_metric != float("inf") else None,
+                metadata={"selection_metric_name": selection_metric_name},
+            )
+            save_checkpoint(
+                trainer,
+                checkpoint_dir / "latest.pt",
+                epoch=epoch + 1,
+                global_step=global_step,
+                batch_index=None,
+                metrics=train_metrics,
+                best_metric=best_metric if best_metric != float("inf") else None,
+                metadata={"selection_metric_name": selection_metric_name},
+            )
         epoch_result: dict[str, object] = {
             "epoch": epoch + 1,
             "train": train_metrics,

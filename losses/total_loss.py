@@ -12,9 +12,9 @@ from models.encoder import EncoderOutputs
 
 @dataclass
 class LossWeights:
-    local: float = 1.0
+    local: float = 0.1
     global_: float = 1.0
-    reconstruction: float = 1.0
+    reconstruction: float = 0.1
 
 
 class ECGTrainingObjective(nn.Module):
