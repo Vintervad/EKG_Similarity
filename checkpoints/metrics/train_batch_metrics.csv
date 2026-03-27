@@ -1,2 +1,0 @@
-split,epoch,global_step,batch_index,loss,local_loss,global_loss,reconstruction_loss,reconstruction_loss_view1,reconstruction_loss_view2,batch_size
-train,1,1,1,2.3692150115966797,0.23217925429344177,1.144589900970459,0.9924458265304565,0.9926335215568542,0.9922581315040588,2.0
