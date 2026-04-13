@@ -20,6 +20,9 @@ from training.trainer import ContrastiveAutoencoderTrainer
 @dataclass
 class TrainConfig:
     data_root: str | None = None
+    train_csv: str | Path = "train.csv"
+    val_csv: str | Path = "val.csv"
+    test_csv: str | Path = "test.csv"
     batch_size: int = 8
     input_channels: int = 12
     sequence_length: int = 2500
@@ -265,6 +268,9 @@ def train_with_dataloaders(config: TrainConfig | None = None) -> dict[str, objec
     dataloaders = build_split_dataloaders(
         ECGDataConfig(
             data_root=config.data_root,
+            train_csv=config.train_csv,
+            val_csv=config.val_csv,
+            test_csv=config.test_csv,
             batch_size=config.batch_size,
             eval_batch_size=config.batch_size,
             num_leads=config.input_channels,

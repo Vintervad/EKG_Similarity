@@ -10,6 +10,10 @@ def parse_args() -> argparse.Namespace:
         description="Run a smoke test or train/evaluate the ECG InceptionTime + Transformer contrastive autoencoder."
     )
     parser.add_argument("--data-root", type=str, default=None)
+    parser.add_argument("--train-csv", type=str, default="train.csv")
+    parser.add_argument("--val-csv", type=str, default="val.csv")
+    parser.add_argument("--test-csv", type=str, default="test.csv")
+    parser.add_argument("--output-dir", type=str, default="checkpoints")
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--channels", type=int, default=12)
     parser.add_argument("--sequence-length", type=int, default=2500)
@@ -27,6 +31,9 @@ def main() -> None:
     args = parse_args()
     config = TrainConfig(
         data_root=args.data_root,
+        train_csv=args.train_csv,
+        val_csv=args.val_csv,
+        test_csv=args.test_csv,
         batch_size=args.batch_size,
         input_channels=args.channels,
         sequence_length=args.sequence_length,
@@ -37,6 +44,7 @@ def main() -> None:
         early_stopping_patience=args.early_stopping_patience,
         early_stopping_min_delta=args.early_stopping_min_delta,
         steps=args.steps,
+        checkpoint_dir=args.output_dir,
     )
     if args.data_root:
         results = train_with_dataloaders(config)

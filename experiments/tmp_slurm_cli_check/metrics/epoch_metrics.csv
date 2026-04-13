@@ -1,0 +1,2 @@
+epoch,global_step,selection_metric,train_loss,train_local_loss,train_global_loss,train_reconstruction_loss,train_reconstruction_loss_view1,train_reconstruction_loss_view2,train_batch_size,val_loss,val_local_loss,val_global_loss,val_reconstruction_loss,val_reconstruction_loss_view1,val_reconstruction_loss_view2,val_batch_size
+1,1,0.10169424116611481,0.8092854022979736,0.14918261766433716,0.6959799528121948,0.9838716983795166,0.9840742945671082,0.983669102191925,2.0,0.10169424116611481,0.0,0.0,1.0169423818588257,1.0169504880905151,1.0169342756271362,1.0

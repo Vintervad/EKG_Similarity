@@ -16,9 +16,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 @dataclass
 class ECGDataConfig:
     data_root: str | Path = "data"
-    train_csv: str = "train.csv"
-    val_csv: str = "val.csv"
-    test_csv: str = "test.csv"
+    train_csv: str | Path = "train.csv"
+    val_csv: str | Path = "val.csv"
+    test_csv: str | Path = "test.csv"
     signal_column: str = "path"
     id_column: str | None = "id"
     num_leads: int = 12
@@ -39,6 +39,7 @@ class ECGDataset(Dataset):
         self,
         csv_path: str | Path,
         split: str,
+        data_root: str | Path | None = None,
         signal_column: str = "path",
         id_column: str | None = "id",
         num_leads: int = 12,
@@ -48,7 +49,7 @@ class ECGDataset(Dataset):
         self.signal_column = signal_column
         self.id_column = id_column
         self.num_leads = num_leads
-        self.data_root = self.csv_path.parent.parent
+        self.data_root = resolve_data_root(data_root) if data_root is not None else self.csv_path.parent.parent
         self.raw_split_dir = self.data_root / "raw" / split
         self.records = self._read_records()
 
@@ -144,8 +145,16 @@ class ECGDataset(Dataset):
         return sample
 
 
-def _build_split_csv_path(data_root: Path, filename: str) -> Path:
-    return data_root / "metadata" / filename
+def _build_split_csv_path(data_root: Path, filename: str | Path) -> Path:
+    csv_path = Path(filename)
+    if csv_path.is_absolute():
+        return csv_path
+    direct_candidate = REPO_ROOT / csv_path
+    if csv_path.exists():
+        return csv_path.resolve()
+    if direct_candidate.exists():
+        return direct_candidate
+    return data_root / "metadata" / csv_path
 
 
 def build_split_dataset(config: ECGDataConfig, split: str) -> ECGDataset:
@@ -161,6 +170,7 @@ def build_split_dataset(config: ECGDataConfig, split: str) -> ECGDataset:
     return ECGDataset(
         csv_path=csv_path,
         split=split,
+        data_root=data_root,
         signal_column=config.signal_column,
         id_column=config.id_column,
         num_leads=config.num_leads,
