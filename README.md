@@ -15,8 +15,12 @@ The current pipeline is:
 5. apply global contrastive loss on a projection head fed by the transformer global embedding
 6. reconstruct the original ECG from transformer tokens
 7. save checkpoints during training and track `checkpoints/best.pt`
-8. use the best checkpoint to embed the ECG database
-9. retrieve similar ECGs from the embedding space
+8. use the best checkpoint to build a FAISS GPU index of the ECG database
+9. retrieve 1000+ similar ECGs instantaneously from the embedding space
+
+**Dependencies Update:** This repository requires `faiss-gpu` for high-speed kNN retrieval.
+```bash 
+pip install faiss-gpu
 
 The important design choice is:
 
@@ -142,17 +146,10 @@ The CSV logs can be used directly for graphs in pandas, matplotlib, Excel, or si
 
 ### 4. Retrieve Similar ECGs
 
-Query against the saved combined index:
-
-```bash
-python retrieve.py --data-root data --reference-index embeddings/all_global_index.pt --query-split test --top-k 5 --device cuda
-```
-
-Or build the reference index on the fly from all available splits:
+Query against the saved FAISS index. You can explicitly set `--top-k` to retrieve larger sets (e.g., 1000) for downstream statistical analysis.
 
 ```bash
 python retrieve.py --data-root data --reference-split all --query-split test --top-k 5 --device cuda
-```
 
 ## Model Summary
 
