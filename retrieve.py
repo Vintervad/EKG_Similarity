@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 
 from data.dataset import ECGDataConfig, build_split_dataset, resolve_data_root
 from models.encoder import ECGEncoderConfig
+from utils.faiss_retrieval import build_faiss_retrieval_index, load_faiss_retrieval_index
 from utils.retrieval import (
     build_model_for_retrieval,
     build_multi_split_retrieval_index,
@@ -17,7 +18,7 @@ from utils.retrieval import (
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Retrieve similar ECGs with kNN in the learned embedding space.")
+    parser = argparse.ArgumentParser(description="Retrieve similar ECGs with kNN or FAISS ANN in the learned embedding space.")
     parser.add_argument("--data-root", type=str, default="data")
     parser.add_argument("--reference-split", type=str, default="train", choices=["train", "val", "test", "all"])
     parser.add_argument("--query-split", type=str, default="test", choices=["train", "val", "test"])
@@ -34,6 +35,27 @@ def parse_args() -> argparse.Namespace:
         default="global",
         choices=["retrieval", "global", "projection", "local"],
     )
+    parser.add_argument("--backend", type=str, default="torch", choices=["torch", "faiss"])
+    parser.add_argument(
+        "--faiss-index-type",
+        type=str,
+        default="ivf-flat",
+        choices=["flat", "ivf-flat", "ivf-pq"],
+        help="FAISS index family to build when --backend faiss is used and no saved reference index is provided.",
+    )
+    parser.add_argument(
+        "--faiss-use-gpu",
+        action="store_true",
+        help="Use a GPU-backed FAISS index when a GPU-enabled FAISS build is installed.",
+    )
+    parser.add_argument("--faiss-gpu-device", type=int, default=0)
+    parser.add_argument("--faiss-nlist", type=int, default=65536)
+    parser.add_argument("--faiss-nprobe", type=int, default=64)
+    parser.add_argument("--faiss-train-size", type=int, default=200000)
+    parser.add_argument("--faiss-train-seed", type=int, default=0)
+    parser.add_argument("--faiss-pq-m", type=int, default=16)
+    parser.add_argument("--faiss-pq-bits", type=int, default=8)
+    parser.add_argument("--faiss-add-batch-size", type=int, default=100000)
     return parser.parse_args()
 
 
@@ -58,12 +80,20 @@ def main() -> None:
     )
 
     if args.reference_index is not None:
-        index = load_retrieval_index(args.reference_index)
         model = build_model_for_retrieval(
             checkpoint_path=checkpoint_path,
             device=args.device,
             model_config=ECGEncoderConfig(input_channels=args.channels),
         )
+        if args.backend == "faiss":
+            index = load_faiss_retrieval_index(
+                args.reference_index,
+                use_gpu=args.faiss_use_gpu,
+                gpu_device=args.faiss_gpu_device,
+                nprobe=args.faiss_nprobe,
+            )
+        else:
+            index = load_retrieval_index(args.reference_index)
     else:
         model = build_model_for_retrieval(
             checkpoint_path=checkpoint_path,
@@ -71,7 +101,7 @@ def main() -> None:
             model_config=ECGEncoderConfig(input_channels=args.channels),
         )
         if args.reference_split == "all":
-            index = build_multi_split_retrieval_index(
+            reference_index = build_multi_split_retrieval_index(
                 data_root=data_root,
                 splits=None,
                 checkpoint_path=checkpoint_path,
@@ -84,13 +114,34 @@ def main() -> None:
             reference_dataset = build_split_dataset(config, args.reference_split)
             reference_loader = DataLoader(reference_dataset, batch_size=args.batch_size, shuffle=False)
 
-            index = build_retrieval_index(
+            reference_index = build_retrieval_index(
                 model=model,
                 dataloader=reference_loader,
                 split=args.reference_split,
                 device=args.device,
                 embedding_type=args.embedding_type,
             )
+        if args.backend == "faiss":
+            index = build_faiss_retrieval_index(
+                embeddings=reference_index.embeddings,
+                ids=reference_index.ids,
+                paths=reference_index.paths,
+                splits=reference_index.splits,
+                source_name=reference_index.source_name,
+                embedding_type=reference_index.embedding_type,
+                index_type=args.faiss_index_type,
+                use_gpu=args.faiss_use_gpu,
+                gpu_device=args.faiss_gpu_device,
+                nlist=args.faiss_nlist,
+                nprobe=args.faiss_nprobe,
+                train_size=args.faiss_train_size,
+                train_seed=args.faiss_train_seed,
+                pq_m=args.faiss_pq_m,
+                pq_bits=args.faiss_pq_bits,
+                add_batch_size=args.faiss_add_batch_size,
+            )
+        else:
+            index = reference_index
 
     query_dataset = build_split_dataset(config, args.query_split)
     query_loader = DataLoader(query_dataset, batch_size=args.batch_size, shuffle=False)
@@ -101,7 +152,10 @@ def main() -> None:
     print(f"checkpoint={checkpoint_path}")
     if args.reference_index is not None:
         print(f"reference_index={args.reference_index}")
+    print(f"backend={args.backend}")
     print(f"reference_source={index.source_name}")
+    if args.backend == "faiss":
+        print(f"faiss_index_type={index.index_type}, nprobe={index.nprobe}")
     for query_idx in range(limit):
         query_id = query_payload["ids"][query_idx]
         query_path = query_payload["paths"][query_idx]
