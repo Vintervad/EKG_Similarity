@@ -282,7 +282,30 @@ If there is no validation split, it falls back to total training loss.
 
 Set `--early-stopping-patience -1` to disable early stopping.
 
-### 3. Embed The ECG Database
+### 3. Augmentation Modes
+
+The repository supports two modes for creating the two augmented views used in contrastive training:
+
+#### Default Mode (`--augment-mode default`)
+Uses synthetic transforms:
+- Random Amplitude Scaling
+- Gaussian Noise
+- Random Time Shifting
+- Random Time Masking
+- Baseline Wander (Sinusoidal)
+
+#### PhysioNet Mode (`--augment-mode physionet`)
+Uses real-world noise from the PhysioNet NSTDB database:
+1. **View 1 (Clean)**: Applies a clinical 0.016-150Hz bandpass filter to the original ECG.
+2. **View 2 (Noisy)**: Applies the same clinical filter, then adds a combination of Muscle Artifact (`ma`), Baseline Wander (`bw`), and Electrode Motion (`em`) from the noise banks.
+
+To use this mode, ensure the noise files exist (run `python preproc/setup_noise.py`) and specify the directory:
+
+```bash
+python main.py --data-root data --augment-mode physionet --physionet-noise-dir physionet_data --physionet-target-snr 5.0
+```
+
+### 4. Embed The ECG Database
 
 After training, create retrieval indices from the best checkpoint.
 

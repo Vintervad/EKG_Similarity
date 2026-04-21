@@ -1,8 +1,12 @@
 from __future__ import annotations
+import os
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
+import numpy as np
 import torch
+import wfdb
+from scipy.signal import butter, filtfilt, resample_poly
 
 
 def _ensure_batched(x: torch.Tensor) -> tuple[torch.Tensor, bool]:
@@ -131,6 +135,105 @@ class BaselineWander:
             drift = amplitude * torch.sin(2 * torch.pi * frequency * timeline + phase)
             out[index] = out[index] + drift.view(1, seq_len).expand(leads, -1)
         return out.squeeze(0) if squeezed else out
+
+
+@dataclass
+class ClinicalBandpassFilter:
+    fs: float = 500.0
+    lowcut: float = 0.016
+    highcut: float = 150.0
+    order: int = 3
+
+    def __post_init__(self) -> None:
+        nyquist = 0.5 * self.fs
+        low = self.lowcut / nyquist
+        high = self.highcut / nyquist
+        self.b, self.a = butter(self.order, [low, high], btype="band")
+
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        x_np = x.detach().cpu().numpy()
+        filtered = filtfilt(self.b, self.a, x_np, axis=-1)
+        return torch.from_numpy(filtered.copy()).to(device=x.device, dtype=x.dtype)
+
+
+class PhysioNetNoise:
+    def __init__(
+        self,
+        noise_dir: str = "physionet_data",
+        target_snr_db: float = 5.0,
+        fs: float = 500.0,
+    ) -> None:
+        self.noise_dir = noise_dir
+        self.target_snr_db = target_snr_db
+        self.fs = fs
+        self.snr_linear = 10 ** (target_snr_db / 10.0)
+        self.noise_banks = self._load_noise_banks()
+
+    def _load_noise_banks(self) -> dict[str, np.ndarray]:
+        noise_banks = {}
+        original_fs = 360
+        for noise_type in ["ma", "bw", "em"]:
+            path = os.path.join(self.noise_dir, noise_type)
+            if not (os.path.exists(f"{path}.dat") and os.path.exists(f"{path}.hea")):
+                raise FileNotFoundError(
+                    f"PhysioNet noise record {noise_type!r} not found in {self.noise_dir}. "
+                    "Run preproc/setup_noise.py first or specify --physionet-noise-dir."
+                )
+            record = wfdb.rdrecord(path)
+            raw_noise = record.p_signal[:, 0].astype(np.float32)
+            resampled_noise = resample_poly(raw_noise, up=int(self.fs), down=original_fs)
+            noise_banks[noise_type] = resampled_noise.astype(np.float32)
+        return noise_banks
+
+    def _get_scaled_noise(self, clean_lead: np.ndarray) -> np.ndarray:
+        ecg_length = clean_lead.shape[-1]
+        composite_noise = np.zeros(ecg_length, dtype=np.float32)
+        for noise_type in ["ma", "bw", "em"]:
+            bank = self.noise_banks[noise_type]
+            if len(bank) <= ecg_length:
+                noise_slice = np.resize(bank, ecg_length)
+            else:
+                start_idx = np.random.randint(0, len(bank) - ecg_length)
+                noise_slice = bank[start_idx : start_idx + ecg_length]
+            composite_noise += noise_slice
+        
+        sig_power = np.mean(clean_lead**2)
+        noise_power = np.mean(composite_noise**2)
+        if noise_power > 0:
+            target_noise_power = sig_power / self.snr_linear
+            scaling_factor = np.sqrt(target_noise_power / noise_power)
+            composite_noise *= scaling_factor
+        return composite_noise
+
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        x_batched, squeezed = _ensure_batched(x)
+        batch_size, num_leads, seq_len = x_batched.shape
+        x_np = x_batched.detach().cpu().numpy()
+        out_np = np.zeros_like(x_np)
+        
+        for b in range(batch_size):
+            for l in range(num_leads):
+                noise = self._get_scaled_noise(x_np[b, l])
+                out_np[b, l] = x_np[b, l] + noise
+        
+        out = torch.from_numpy(out_np).to(device=x.device, dtype=x.dtype)
+        return out.squeeze(0) if squeezed else out
+
+
+class PhysioNetTwoViewAugmentor:
+    def __init__(
+        self,
+        noise_dir: str = "physionet_data",
+        target_snr_db: float = 5.0,
+        fs: float = 500.0,
+    ) -> None:
+        self.filter = ClinicalBandpassFilter(fs=fs)
+        self.noise = PhysioNetNoise(noise_dir=noise_dir, target_snr_db=target_snr_db, fs=fs)
+
+    def __call__(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        filtered = self.filter(x)
+        noisy = self.noise(filtered)
+        return filtered, noisy
 
 
 class TwoViewECGAugmentor:

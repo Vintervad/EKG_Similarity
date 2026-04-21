@@ -24,6 +24,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--early-stopping-min-delta", type=float, default=0.0)
     parser.add_argument("--steps", type=int, default=1)
     parser.add_argument("--device", type=str, default="cpu")
+    parser.add_argument("--augment-mode", type=str, default="default", choices=["default", "physionet"])
+    parser.add_argument("--physionet-noise-dir", type=str, default="physionet_data")
+    parser.add_argument("--physionet-target-snr", type=float, default=5.0)
     return parser.parse_args()
 
 
@@ -45,6 +48,9 @@ def main() -> None:
         early_stopping_min_delta=args.early_stopping_min_delta,
         steps=args.steps,
         checkpoint_dir=args.output_dir,
+        augment_mode=args.augment_mode,
+        physionet_noise_dir=args.physionet_noise_dir,
+        physionet_target_snr=args.physionet_target_snr,
     )
     if args.data_root:
         results = train_with_dataloaders(config)

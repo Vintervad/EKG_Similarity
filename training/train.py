@@ -37,6 +37,9 @@ class TrainConfig:
     save_every_epoch: bool = True
     early_stopping_patience: int | None = 10
     early_stopping_min_delta: float = 0.0
+    augment_mode: str = "default"
+    physionet_noise_dir: str = "physionet_data"
+    physionet_target_snr: float = 5.0
 
 
 def _checkpoint_dir(path: str | Path) -> Path:
@@ -220,12 +223,25 @@ def build_trainer(
     device: str = "cpu",
     learning_rate: float = 1e-3,
     weight_decay: float = 1e-4,
+    augment_mode: str = "default",
+    physionet_noise_dir: str = "physionet_data",
+    physionet_target_snr: float = 5.0,
 ) -> ContrastiveAutoencoderTrainer:
     model_config = model_config or ECGEncoderConfig()
     model = ECGContrastiveAutoencoder(model_config)
     objective = ECGTrainingObjective(weights=loss_weights)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    augmentor = TwoViewECGAugmentor()
+    
+    if augment_mode == "physionet":
+        from data.augmentations import PhysioNetTwoViewAugmentor
+        augmentor = PhysioNetTwoViewAugmentor(
+            noise_dir=physionet_noise_dir,
+            target_snr_db=physionet_target_snr,
+            fs=500.0
+        )
+    else:
+        augmentor = TwoViewECGAugmentor()
+
     return ContrastiveAutoencoderTrainer(
         model=model,
         objective=objective,
@@ -242,6 +258,9 @@ def smoke_test(config: TrainConfig | None = None) -> list[dict[str, float]]:
         device=config.device,
         learning_rate=config.learning_rate,
         weight_decay=config.weight_decay,
+        augment_mode=config.augment_mode,
+        physionet_noise_dir=config.physionet_noise_dir,
+        physionet_target_snr=config.physionet_target_snr,
     )
     metrics_history: list[dict[str, float]] = []
     for _ in range(config.steps):
@@ -264,6 +283,9 @@ def train_with_dataloaders(config: TrainConfig | None = None) -> dict[str, objec
         device=config.device,
         learning_rate=config.learning_rate,
         weight_decay=config.weight_decay,
+        augment_mode=config.augment_mode,
+        physionet_noise_dir=config.physionet_noise_dir,
+        physionet_target_snr=config.physionet_target_snr,
     )
     dataloaders = build_split_dataloaders(
         ECGDataConfig(
