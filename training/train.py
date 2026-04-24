@@ -226,18 +226,33 @@ def build_trainer(
     augment_mode: str = "default",
     physionet_noise_dir: str = "physionet_data",
     physionet_target_snr: float = 5.0,
+    sequence_length: int = 2500,
 ) -> ContrastiveAutoencoderTrainer:
     model_config = model_config or ECGEncoderConfig()
     model = ECGContrastiveAutoencoder(model_config)
     objective = ECGTrainingObjective(weights=loss_weights)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=learning_rate, weight_decay=weight_decay
+    )
+
     if augment_mode == "physionet":
         from data.augmentations import PhysioNetTwoViewAugmentor
+
         augmentor = PhysioNetTwoViewAugmentor(
+            noise_dir=physionet_noise_dir, target_snr_db=physionet_target_snr, fs=500.0
+        )
+    elif augment_mode == "temporal_split":
+        from data.augmentations import TemporalSplitTwoViewAugmentor
+
+        augmentor = TemporalSplitTwoViewAugmentor(split_length=sequence_length)
+    elif augment_mode == "physionet_temporal_split":
+        from data.augmentations import PhysioNetTemporalSplitTwoViewAugmentor
+
+        augmentor = PhysioNetTemporalSplitTwoViewAugmentor(
             noise_dir=physionet_noise_dir,
             target_snr_db=physionet_target_snr,
-            fs=500.0
+            fs=500.0,
+            split_length=sequence_length,
         )
     else:
         augmentor = TwoViewECGAugmentor()
@@ -254,17 +269,27 @@ def build_trainer(
 def smoke_test(config: TrainConfig | None = None) -> list[dict[str, float]]:
     config = config or TrainConfig()
     trainer = build_trainer(
-        model_config=ECGEncoderConfig(input_channels=config.input_channels, max_sequence_length=config.sequence_length),
+        model_config=ECGEncoderConfig(
+            input_channels=config.input_channels,
+            max_sequence_length=config.sequence_length,
+        ),
         device=config.device,
         learning_rate=config.learning_rate,
         weight_decay=config.weight_decay,
         augment_mode=config.augment_mode,
         physionet_noise_dir=config.physionet_noise_dir,
         physionet_target_snr=config.physionet_target_snr,
+        sequence_length=config.sequence_length,
     )
     metrics_history: list[dict[str, float]] = []
+    # If temporal split is used, we need 2x samples to split it into two views
+    input_length = (
+        2 * config.sequence_length
+        if "temporal_split" in config.augment_mode
+        else config.sequence_length
+    )
     for _ in range(config.steps):
-        batch = torch.randn(config.batch_size, config.input_channels, config.sequence_length)
+        batch = torch.randn(config.batch_size, config.input_channels, input_length)
         metrics_history.append(trainer.step(batch, train=True))
     return metrics_history
 
@@ -286,7 +311,16 @@ def train_with_dataloaders(config: TrainConfig | None = None) -> dict[str, objec
         augment_mode=config.augment_mode,
         physionet_noise_dir=config.physionet_noise_dir,
         physionet_target_snr=config.physionet_target_snr,
+        sequence_length=config.sequence_length,
     )
+
+    # If temporal split is used, dataset must return 10s (5000 samples)
+    target_length = (
+        2 * config.sequence_length
+        if "temporal_split" in config.augment_mode
+        else config.sequence_length
+    )
+
     dataloaders = build_split_dataloaders(
         ECGDataConfig(
             data_root=config.data_root,
@@ -298,6 +332,7 @@ def train_with_dataloaders(config: TrainConfig | None = None) -> dict[str, objec
             num_leads=config.input_channels,
             num_workers=config.num_workers,
             pin_memory=config.pin_memory,
+            target_length=target_length,
         )
     )
 
