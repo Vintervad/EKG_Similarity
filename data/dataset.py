@@ -9,7 +9,6 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -27,6 +26,7 @@ class ECGDataConfig:
     num_workers: int = 0
     pin_memory: bool = False
     drop_last_train: bool = False
+    target_length: int | None = None
 
 
 def resolve_data_root(data_root: str | Path) -> Path:
@@ -43,13 +43,19 @@ class ECGDataset(Dataset):
         signal_column: str = "path",
         id_column: str | None = "id",
         num_leads: int = 12,
+        target_length: int | None = None,
     ) -> None:
         self.csv_path = Path(csv_path)
         self.split = split
         self.signal_column = signal_column
         self.id_column = id_column
         self.num_leads = num_leads
-        self.data_root = resolve_data_root(data_root) if data_root is not None else self.csv_path.parent.parent
+        self.target_length = target_length
+        self.data_root = (
+            resolve_data_root(data_root)
+            if data_root is not None
+            else self.csv_path.parent.parent
+        )
         self.raw_split_dir = self.data_root / "raw" / split
         self.records = self._read_records()
 
@@ -67,7 +73,9 @@ class ECGDataset(Dataset):
                 )
             records = [row for row in reader if row.get(self.signal_column)]
         if not records:
-            raise ValueError(f"CSV file {self.csv_path} does not contain any rows with {self.signal_column!r}.")
+            raise ValueError(
+                f"CSV file {self.csv_path} does not contain any rows with {self.signal_column!r}."
+            )
         return records
 
     def _resolve_path(self, value: str) -> Path:
@@ -99,22 +107,32 @@ class ECGDataset(Dataset):
             payload = torch.load(path, map_location="cpu")
             if isinstance(payload, dict):
                 if "signal" not in payload:
-                    raise KeyError(f"Tensor file {path} is a dict but does not contain a 'signal' key.")
+                    raise KeyError(
+                        f"Tensor file {path} is a dict but does not contain a 'signal' key."
+                    )
                 payload = payload["signal"]
             if not isinstance(payload, torch.Tensor):
-                raise TypeError(f"Expected torch.Tensor inside {path}, got {type(payload)!r}.")
+                raise TypeError(
+                    f"Expected torch.Tensor inside {path}, got {type(payload)!r}."
+                )
             array = payload.detach().cpu().numpy()
         else:
-            raise ValueError(f"Unsupported ECG file type {suffix!r}. Use .npy, .pt, or .pth.")
+            raise ValueError(
+                f"Unsupported ECG file type {suffix!r}. Use .npy, .pt, or .pth."
+            )
         if not isinstance(array, np.ndarray):
             raise TypeError(f"Loaded object from {path} is not a NumPy array.")
         return array
 
     def _to_leads_time_tensor(self, array: np.ndarray, path: Path) -> torch.Tensor:
         if array.ndim < 2:
-            raise ValueError(f"ECG array from {path} must have at least 2 dimensions, got shape {array.shape}.")
+            raise ValueError(
+                f"ECG array from {path} must have at least 2 dimensions, got shape {array.shape}."
+            )
 
-        lead_axes = [index for index, size in enumerate(array.shape) if size == self.num_leads]
+        lead_axes = [
+            index for index, size in enumerate(array.shape) if size == self.num_leads
+        ]
         if len(lead_axes) != 1:
             raise ValueError(
                 f"ECG array from {path} must have exactly one axis of size {self.num_leads}. "
@@ -135,6 +153,14 @@ class ECGDataset(Dataset):
         signal_path = self._resolve_path(record[self.signal_column])
         array = self._load_array(signal_path)
         signal = self._to_leads_time_tensor(array, signal_path)
+
+        if self.target_length is not None:
+            curr_len = signal.size(-1)
+            if curr_len < self.target_length:
+                padding = torch.zeros(signal.size(0), self.target_length - curr_len, dtype=signal.dtype)
+                signal = torch.cat([signal, padding], dim=-1)
+            elif curr_len > self.target_length:
+                signal = signal[..., : self.target_length]
 
         sample: dict[str, Any] = {
             "signal": signal,
@@ -164,7 +190,9 @@ def build_split_dataset(config: ECGDataConfig, split: str) -> ECGDataset:
         "test": config.test_csv,
     }
     if split not in filename_map:
-        raise ValueError(f"Unsupported split {split!r}. Expected one of {sorted(filename_map)}.")
+        raise ValueError(
+            f"Unsupported split {split!r}. Expected one of {sorted(filename_map)}."
+        )
     data_root = resolve_data_root(config.data_root)
     csv_path = _build_split_csv_path(data_root, filename_map[split])
     return ECGDataset(
@@ -174,6 +202,7 @@ def build_split_dataset(config: ECGDataConfig, split: str) -> ECGDataset:
         signal_column=config.signal_column,
         id_column=config.id_column,
         num_leads=config.num_leads,
+        target_length=config.target_length,
     )
 
 

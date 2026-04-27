@@ -282,7 +282,42 @@ If there is no validation split, it falls back to total training loss.
 
 Set `--early-stopping-patience -1` to disable early stopping.
 
-### 3. Embed The ECG Database
+### 3. Augmentation Modes
+
+The repository supports several modes for creating the two augmented views used in contrastive training:
+
+#### Default Mode (`--augment-mode default`)
+Uses synthetic transforms on two augmented versions of the same signal segment:
+- Random Amplitude Scaling
+- Gaussian Noise
+- Random Time Shifting
+- Random Time Masking
+- Baseline Wander (Sinusoidal)
+
+#### Temporal Split Mode (`--augment-mode temporal_split`)
+Divides a **10-second** ECG signal into two consecutive, non-overlapping **5-second** segments ($x_1$ and $x_2$). Each segment is then independently augmented using the default synthetic transforms. This enforces invariance to heart rate and temporal alignment differences between segments of the same patient recording.
+
+#### PhysioNet Temporal Split Mode (`--augment-mode physionet_temporal_split`)
+Our primary strategy for realistic, morphology-preserving representation learning. It imposes three primary constraints on the augmentation process:
+
+1.  **Noise Invariance Constraint**: Added noise (from the MIT-BIH NSTDB) must represent nuisance variation and not introduce cardiac morphology from donor ECGs.
+2.  **Morphology Preservation Constraint**: Positive-pair augmentations must preserve clinically relevant waveform characteristics (P-wave, QRS, T-wave, ST-segment). This is achieved by applying a clinical bandpass filter (0.05–150Hz) to both segments.
+3.  **Diagnostic Fidelity Constraint**: The denoised view must retain the full diagnostic content and not suppress subtle pathological patterns.
+
+**Workflow**:
+- **Split**: Divides the 10s recording into two consecutive 5s segments ($x_1$ and $x_2$).
+- **Filter**: Both segments pass through a clinical bandpass filter.
+- **Views**:
+    - **View 1 (Target)**: The filtered "clean" segment $x_1$.
+    - **View 2 (Query)**: The filtered segment $x_2$ with added PhysioNet noise.
+
+To use this mode, ensure the noise files exist (run `python preproc/setup_noise.py`) and specify the directory:
+
+```bash
+python main.py --data-root data --augment-mode physionet_temporal_split --physionet-noise-dir physionet_data --sequence-length 2500 --device cuda
+```
+
+### 4. Embed The ECG Database
 
 After training, create retrieval indices from the best checkpoint.
 
