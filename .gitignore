@@ -27,6 +27,7 @@ Thumbs.db
 # Training outputs
 checkpoints/
 embeddings/
+logs/
 
 # Converted dataset artifacts
 data/raw/
@@ -39,3 +40,6 @@ experiments/tmp_embeddings_test_projection/
 
 # Misc temporary files
 *.tmp
+tmp*/
+*_hpc_upload.zip
+_hpc_upload_stage/

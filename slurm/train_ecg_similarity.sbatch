@@ -10,12 +10,12 @@
 
 set -euo pipefail
 
-REPO_DIR="/path/to/EKG_Similarity"
-DATA_ROOT="/path/to/data_root"
-TRAIN_CSV="/path/to/metadata/train.csv"
-VAL_CSV="/path/to/metadata/val.csv"
-TEST_CSV="/path/to/metadata/test.csv"
-OUTPUT_DIR="/path/to/output_dir"
+REPO_DIR="/dnec/work/ST10/python/EKG_Sim"
+DATA_ROOT="/dnec/data"
+TRAIN_CSV="${DATA_ROOT}/metadata/train.csv"
+VAL_CSV="${DATA_ROOT}/metadata/val.csv"
+TEST_CSV="${DATA_ROOT}/metadata/test.csv"
+OUTPUT_DIR="${REPO_DIR}/checkpoints"
 
 mkdir -p "${REPO_DIR}/logs"
 mkdir -p "${OUTPUT_DIR}"

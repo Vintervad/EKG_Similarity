@@ -10,10 +10,10 @@
 
 set -euo pipefail
 
-REPO_DIR="/path/to/EKG_Similarity"
-DATA_ROOT="/path/to/data_root"
-CHECKPOINT="/path/to/checkpoints/best.pt"
-OUTPUT_DIR="/path/to/embedding_output_dir"
+REPO_DIR="/dnec/work/ST10/python/EKG_Sim"
+DATA_ROOT="/dnec/data"
+CHECKPOINT="${REPO_DIR}/checkpoints/best.pt"
+OUTPUT_DIR="${REPO_DIR}/embeddings"
 
 mkdir -p "${REPO_DIR}/logs"
 mkdir -p "${OUTPUT_DIR}"
