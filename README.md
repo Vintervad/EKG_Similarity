@@ -206,26 +206,22 @@ x = x.permute(0, 2, 1)
 
 ```text
 data/
-  raw/
-    train/
-      sample_0001.npy
-      sample_0002.npy
-    val/
-      sample_1001.npy
-    test/
-      sample_2001.npy
+  any_subfolder/
+    sample_0001.parquet
+    nested/
+      sample_0002.parquet
   metadata/
     train.csv
     val.csv
     test.csv
 ```
 
-Each CSV should contain at least:
+Each CSV should contain at least a `path` column and an ID column such as `id`, `Test_ID`, or `test_id`. The loader uses the file path from the CSV; the ECG files can be in any subfolder as long as the CSV points to them.
 
 ```csv
-id,path
-0001,data/raw/train/sample_0001.npy
-0002,data/raw/train/sample_0002.npy
+Test_ID,path
+Test_ID_00001,any_subfolder/sample_0001.parquet
+Test_ID_00002,any_subfolder/nested/sample_0002.parquet
 ```
 
 Supported ECG file formats:
@@ -233,6 +229,7 @@ Supported ECG file formats:
 - `.npy`
 - `.pt`
 - `.pth`
+- `.parquet` with columns `I`, `II`, `III`, `aVR`, `aVL`, `aVF`, `V1`, `V2`, `V3`, `V4`, `V5`, and `V6`
 
 The dataset loader can handle shapes like:
 
@@ -290,12 +287,10 @@ The repository supports several modes for creating the two augmented views used 
 Uses synthetic transforms on two augmented versions of the same signal segment:
 - Random Amplitude Scaling
 - Gaussian Noise
-- Random Time Shifting
-- Random Time Masking
 - Baseline Wander (Sinusoidal)
 
 #### Temporal Split Mode (`--augment-mode temporal_split`)
-Divides a **10-second** ECG signal into two consecutive, non-overlapping **5-second** segments ($x_1$ and $x_2$). Each segment is then independently augmented using the default synthetic transforms. This enforces invariance to heart rate and temporal alignment differences between segments of the same patient recording.
+Divides a **10-second** ECG signal into two consecutive, non-overlapping **5-second** segments ($x_1$ and $x_2$). Each segment is then independently augmented using the default synthetic transforms.
 
 #### PhysioNet Temporal Split Mode (`--augment-mode physionet_temporal_split`)
 Our primary strategy for realistic, morphology-preserving representation learning. It imposes three primary constraints on the augmentation process:

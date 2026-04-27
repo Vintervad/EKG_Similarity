@@ -66,45 +66,6 @@ class GaussianNoise:
 
 
 @dataclass
-class RandomTimeShift:
-    p: float = 0.5
-    max_shift_fraction: float = 0.02
-
-    def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        if torch.rand(1, device=x.device).item() > self.p:
-            return x
-        x_batched, squeezed = _ensure_batched(x)
-        max_shift = max(1, int(x_batched.size(-1) * self.max_shift_fraction))
-        out = torch.empty_like(x_batched)
-        for index in range(x_batched.size(0)):
-            shift = int(
-                torch.randint(-max_shift, max_shift + 1, (1,), device=x.device).item()
-            )
-            out[index] = torch.roll(x_batched[index], shifts=shift, dims=-1)
-        return out.squeeze(0) if squeezed else out
-
-
-@dataclass
-class RandomTimeMask:
-    p: float = 0.3
-    max_mask_fraction: float = 0.08
-
-    def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        if torch.rand(1, device=x.device).item() > self.p:
-            return x
-        x_batched, squeezed = _ensure_batched(x)
-        seq_len = x_batched.size(-1)
-        max_mask = max(1, int(seq_len * self.max_mask_fraction))
-        out = x_batched.clone()
-        for index in range(out.size(0)):
-            mask_len = int(torch.randint(1, max_mask + 1, (1,), device=x.device).item())
-            start_max = max(1, seq_len - mask_len + 1)
-            start = int(torch.randint(0, start_max, (1,), device=x.device).item())
-            out[index, :, start : start + mask_len] = 0
-        return out.squeeze(0) if squeezed else out
-
-
-@dataclass
 class RandomLeadDropout:
     p: float = 0.2
     max_drop_fraction: float = 0.25
@@ -335,8 +296,6 @@ class TwoViewECGAugmentor:  # Augment an ECG signal into two views: filtered and
                 [
                     RandomAmplitudeScale(),  # Randomly scale the amplitude of the input tensor
                     GaussianNoise(),  # Add Gaussian noise to the input tensor
-                    RandomTimeShift(),  # Randomly shift the time of the input tensor
-                    RandomTimeMask(),  # Randomly mask the time of the input tensor
                     # RandomLeadDropout(),
                     BaselineWander(),  # Add baseline wander to the input tensor
                 ]
@@ -370,8 +329,6 @@ class TemporalSplitTwoViewAugmentor:  # Augment an ECG signal into two views: fi
                 [
                     RandomAmplitudeScale(),  # Randomly scale the amplitude of the signal
                     GaussianNoise(),  # Add Gaussian noise to the signal
-                    RandomTimeShift(),  # Randomly shift the time of the signal
-                    RandomTimeMask(),  # Randomly mask the time of the signal
                     BaselineWander(),  # Add baseline wander to the signal
                 ]
             )

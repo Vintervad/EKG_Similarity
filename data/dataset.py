@@ -10,6 +10,21 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+ECG_LEAD_COLUMNS = (
+    "I",
+    "II",
+    "III",
+    "aVR",
+    "aVL",
+    "aVF",
+    "V1",
+    "V2",
+    "V3",
+    "V4",
+    "V5",
+    "V6",
+)
+ID_COLUMN_CANDIDATES = ("id", "Test_ID", "test_id", "testId", "TestID")
 
 
 @dataclass
@@ -86,17 +101,24 @@ class ECGDataset(Dataset):
         else:
             candidates.extend(
                 [
+                    raw_path,
+                    self.data_root / raw_path,
                     REPO_ROOT / raw_path,
                     self.csv_path.parent / raw_path,
                     self.raw_split_dir / raw_path,
-                    self.data_root / raw_path,
                 ]
             )
+        seen: set[Path] = set()
+        unique_candidates = []
         for candidate in candidates:
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            unique_candidates.append(candidate)
             if candidate.exists():
                 return candidate
         raise FileNotFoundError(
-            f"Could not resolve ECG file path {value!r} from CSV {self.csv_path}. Checked: {candidates}"
+            f"Could not resolve ECG file path {value!r} from CSV {self.csv_path}. Checked: {unique_candidates}"
         )
 
     def _load_array(self, path: Path) -> np.ndarray:
@@ -116,13 +138,37 @@ class ECGDataset(Dataset):
                     f"Expected torch.Tensor inside {path}, got {type(payload)!r}."
                 )
             array = payload.detach().cpu().numpy()
+        elif suffix == ".parquet":
+            array = self._load_parquet_array(path)
         else:
             raise ValueError(
-                f"Unsupported ECG file type {suffix!r}. Use .npy, .pt, or .pth."
+                f"Unsupported ECG file type {suffix!r}. Use .npy, .pt, .pth, or .parquet."
             )
         if not isinstance(array, np.ndarray):
             raise TypeError(f"Loaded object from {path} is not a NumPy array.")
         return array
+
+    def _load_parquet_array(self, path: Path) -> np.ndarray:
+        try:
+            import pandas as pd
+        except ImportError as exc:
+            raise ImportError(
+                "Reading parquet ECG files requires pandas with a parquet engine "
+                "such as pyarrow or fastparquet."
+            ) from exc
+
+        frame = pd.read_parquet(path)
+        missing_columns = [
+            column for column in ECG_LEAD_COLUMNS if column not in frame.columns
+        ]
+        if missing_columns:
+            raise KeyError(
+                f"Parquet file {path} is missing ECG lead columns {missing_columns}. "
+                f"Found columns: {list(frame.columns)}"
+            )
+
+        array = frame.loc[:, ECG_LEAD_COLUMNS].to_numpy(dtype=np.float32).T
+        return array / 1000.0
 
     def _to_leads_time_tensor(self, array: np.ndarray, path: Path) -> torch.Tensor:
         if array.ndim < 2:
@@ -168,6 +214,11 @@ class ECGDataset(Dataset):
         }
         if self.id_column is not None and self.id_column in record:
             sample["id"] = record[self.id_column]
+        elif self.id_column is not None:
+            for candidate in ID_COLUMN_CANDIDATES:
+                if candidate in record:
+                    sample["id"] = record[candidate]
+                    break
         return sample
 
 
