@@ -33,10 +33,8 @@ logs/
 data/raw/
 data/metadata/
 
-# Temporary experiment outputs
-experiments/tmp_dataset_test/
-experiments/tmp_embeddings_test/
-experiments/tmp_embeddings_test_projection/
+# Experiment outputs
+experiments/
 
 # Misc temporary files
 *.tmp

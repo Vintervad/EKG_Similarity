@@ -1,0 +1,150 @@
+HPC container notes for EKG_Sim
+================================
+
+Purpose
+-------
+Build a GPU-enabled Python container that can run training, embedding, and
+retrieval for this repository on the HPC.
+
+Repository path expected on HPC
+-------------------------------
+/dnec/work/ST10/python/EKG_Sim
+
+Data path expected on HPC
+-------------------------
+/dnec/data
+
+CSV files
+---------
+The split CSV files do not need to be under /dnec/data. They can live in any
+folder, as long as the training command passes their absolute paths with:
+
+--train-csv /path/to/train.csv
+--val-csv /path/to/val.csv
+--test-csv /path/to/test.csv
+
+Each CSV must contain a path column. Relative parquet paths inside the CSV are
+resolved relative to --data-root. For example, with --data-root /dnec/data:
+
+Test_ID,path
+Test_ID_00001,hospital/rythem/parquet/100k_01/example.parquet
+
+the loader reads:
+
+/dnec/data/hospital/rythem/parquet/100k_01/example.parquet
+
+The ECG parquet files must contain these 12 columns:
+
+I, II, III, aVR, aVL, aVF, V1, V2, V3, V4, V5, V6
+
+Recommended base
+----------------
+Use a CUDA-enabled PyTorch image compatible with the HPC NVIDIA driver.
+For an L40S GPU, CUDA 12.x is appropriate if supported by the cluster.
+
+Example base image:
+
+pytorch/pytorch:2.3.1-cuda12.1-cudnn8-runtime
+
+Python
+------
+Python 3.10, 3.11, or 3.12 should work. Python 3.11 is a conservative choice
+for HPC containers.
+
+Required Python packages
+------------------------
+torch
+numpy
+pandas
+pyarrow
+scipy
+wfdb
+matplotlib
+
+Note about wfdb: in the current code, wfdb is required because
+data/augmentations.py imports it when the training code imports the augmentation
+module. It is functionally used for PhysioNet noise augmentation/setup, but it
+should stay in the container unless the code is later changed to lazy-import
+wfdb only for PhysioNet modes.
+
+Optional Python packages
+------------------------
+faiss-gpu
+
+FAISS is only needed for the FAISS retrieval/indexing workflow. Training does
+not require FAISS.
+
+Suggested pip install command
+-----------------------------
+If the base image already includes PyTorch with CUDA, install only the extra
+packages:
+
+pip install numpy pandas pyarrow scipy wfdb matplotlib
+
+If FAISS GPU indexing is needed, install FAISS in a way that matches the
+cluster/container CUDA stack. Many HPC systems prefer conda/mamba for FAISS:
+
+conda install -c pytorch -c nvidia faiss-gpu
+
+If FAISS is not available with GPU support, retrieval can still use the torch
+backend or a CPU FAISS build.
+
+System packages that may be useful
+----------------------------------
+git
+curl
+ca-certificates
+build-essential
+
+Validation commands inside the container
+----------------------------------------
+Run these from the repository directory:
+
+python -c "import torch; print(torch.__version__); print(torch.cuda.is_available())"
+python -c "import numpy, pandas, pyarrow, scipy, wfdb; print('core deps ok')"
+python -m py_compile main.py data/dataset.py data/augmentations.py training/train.py training/trainer.py
+
+Optional FAISS validation:
+
+python -c "import faiss; print(faiss.__version__); print(hasattr(faiss, 'StandardGpuResources'))"
+
+Training command example
+------------------------
+python main.py \
+  --data-root /dnec/data \
+  --train-csv /path/to/train.csv \
+  --val-csv /path/to/val.csv \
+  --test-csv /path/to/test.csv \
+  --output-dir /dnec/work/ST10/python/EKG_Sim/checkpoints \
+  --batch-size 64 \
+  --channels 12 \
+  --sequence-length 5000 \
+  --epochs 50 \
+  --num-workers 8 \
+  --pin-memory \
+  --early-stopping-patience 10 \
+  --device cuda
+
+Embedding command example
+-------------------------
+python embed_dataset.py \
+  --data-root /dnec/data \
+  --checkpoint /dnec/work/ST10/python/EKG_Sim/checkpoints/best.pt \
+  --splits all \
+  --batch-size 64 \
+  --channels 12 \
+  --device cuda \
+  --embedding-type global \
+  --output-dir /dnec/work/ST10/python/EKG_Sim/embeddings
+
+Notes for the container builder
+-------------------------------
+Do not put the ECG dataset inside the container image. The data should stay on
+the HPC filesystem at /dnec/data and be mounted into the container at runtime.
+
+Do not include local virtual environments, checkpoints, embeddings, logs,
+experiments, __pycache__, or raw data in the image.
+
+For good L40S utilization, allocate enough CPU workers in Slurm to match
+--num-workers. Start with 8 workers, then test 12 or 16 if GPU utilization is
+low because parquet reads are not feeding the GPU fast enough.
