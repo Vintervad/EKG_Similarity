@@ -39,6 +39,7 @@ I, II, III, aVR, aVL, aVF, V1, V2, V3, V4, V5, V6
 
 Recommended base
 ----------------
+We have tried it with CUDA 13.1, however the versions for the python packages have been choosen to work with CUDA 12.6 as well. 
 Use a CUDA-enabled PyTorch image compatible with the HPC NVIDIA driver.
 For an L40S GPU, CUDA 12.x is appropriate if supported by the cluster.
 
@@ -48,18 +49,21 @@ pytorch/pytorch:2.3.1-cuda12.1-cudnn8-runtime
 
 Python
 ------
-Python 3.10, 3.11, or 3.12 should work. Python 3.11 is a conservative choice
+Python 3.10, 3.11, 3.12, or newer should work. Python 3.11 is a conservative choice
 for HPC containers.
 
 Required Python packages
 ------------------------
-torch
-numpy
-pandas
-pyarrow
-scipy
-wfdb
-matplotlib
+torch 2.11.0
+torchvision 0.26.0
+numpy 2.4.3
+faiss-gpu 1.14.1
+libfaiss 1.14.1
+pandas 3.0.2
+pyarrow 24.0.0
+scipy 1.17.1
+wfdb 4.3.1 
+matplotlib 3.10.9
 
 Note about wfdb: in the current code, wfdb is required because
 data/augmentations.py imports it when the training code imports the augmentation
