@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 from pathlib import Path
 
 from torch.utils.data import DataLoader
@@ -56,6 +57,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--faiss-pq-m", type=int, default=16)
     parser.add_argument("--faiss-pq-bits", type=int, default=8)
     parser.add_argument("--faiss-add-batch-size", type=int, default=100000)
+    parser.add_argument(
+        "--output-csv",
+        type=str,
+        default=None,
+        help="Optional path to save all printed top-k retrieval results as a CSV file.",
+    )
     return parser.parse_args()
 
 
@@ -148,6 +155,43 @@ def main() -> None:
     query_payload = extract_embeddings(model, query_loader, device=args.device, embedding_type=args.embedding_type)
     query_results = index.query(query_payload["embeddings"], top_k=args.top_k)
 
+    if args.output_csv is not None:
+        output_csv = Path(args.output_csv)
+        output_csv.parent.mkdir(parents=True, exist_ok=True)
+        with output_csv.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=[
+                    "query_index",
+                    "query_id",
+                    "query_path",
+                    "rank",
+                    "neighbor_index",
+                    "neighbor_id",
+                    "neighbor_split",
+                    "neighbor_path",
+                    "score",
+                ],
+            )
+            writer.writeheader()
+            for query_idx, result_row in enumerate(query_results):
+                query_id = query_payload["ids"][query_idx]
+                query_path = query_payload["paths"][query_idx]
+                for rank, result in enumerate(result_row, start=1):
+                    writer.writerow(
+                        {
+                            "query_index": query_idx,
+                            "query_id": query_id,
+                            "query_path": query_path,
+                            "rank": rank,
+                            "neighbor_index": result["index"],
+                            "neighbor_id": result["id"],
+                            "neighbor_split": result["split"],
+                            "neighbor_path": result["path"],
+                            "score": result["score"],
+                        }
+                    )
+
     limit = min(args.limit_queries, len(query_results))
     print(f"checkpoint={checkpoint_path}")
     if args.reference_index is not None:
@@ -165,6 +209,8 @@ def main() -> None:
                 f"  rank={rank}, score={result['score']:.4f}, "
                 f"id={result['id']}, split={result['split']}, path={result['path']}"
             )
+    if args.output_csv is not None:
+        print(f"saved_topk_csv={args.output_csv}")
 
 
 if __name__ == "__main__":
