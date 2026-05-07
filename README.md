@@ -16,11 +16,11 @@ Retrieval now supports two backends:
 The current pipeline is:
 
 1. load ECGs from `train`, `val`, and `test`
-2. create two augmented views of each ECG
+2. create two temporal views of each ECG by default
 3. encode both views with shared weights
 4. apply local contrastive loss on pooled CNN features
 5. apply global contrastive loss on a projection head fed by the transformer global embedding
-6. reconstruct the original ECG from transformer tokens
+6. reconstruct the original 10-second ECG from each 5-second temporal view
 7. save checkpoints during training and track `checkpoints/best.pt`
 8. use the best checkpoint to embed the ECG database
 9. retrieve similar ECGs from the embedding space with exact kNN or FAISS ANN
@@ -29,6 +29,7 @@ The important design choice is:
 
 - global contrastive training uses the projection head
 - downstream retrieval uses the pre-head transformer global embedding
+- the reconstruction decoder is a training-only auxiliary head and is skipped during embedding
 
 ## Python Dependencies
 
@@ -254,13 +255,13 @@ python main.py --batch-size 2 --channels 12 --sequence-length 512 --steps 1 --de
 CPU:
 
 ```bash
-python main.py --data-root data --batch-size 8 --channels 12 --sequence-length 5000 --epochs 50 --early-stopping-patience 10 --device cpu
+python main.py --data-root data --batch-size 8 --channels 12 --sequence-length 2500 --epochs 50 --early-stopping-patience 10 --device cpu
 ```
 
 GPU:
 
 ```bash
-python main.py --data-root data --batch-size 8 --channels 12 --sequence-length 5000 --epochs 50 --early-stopping-patience 10 --device cuda
+python main.py --data-root data --batch-size 8 --channels 12 --sequence-length 2500 --epochs 50 --early-stopping-patience 10 --device cuda
 ```
 
 This will:
@@ -281,16 +282,43 @@ Set `--early-stopping-patience -1` to disable early stopping.
 
 ### 3. Augmentation Modes
 
-The repository supports several modes for creating the two augmented views used in contrastive training:
+The repository supports several modes for creating the two augmented views used in contrastive training.
+
+#### Temporal Split Mode (`--augment-mode temporal_split`)
+This is the default training mode.
+
+It loads a **10-second** ECG signal and divides it into two consecutive, non-overlapping **5-second** segments:
+
+- `view1`: first 5 seconds
+- `view2`: last 5 seconds
+
+The CNN and Transformer only see the real 5-second segments. No 10-second zero-masked ECG is passed into the encoder.
+
+For reconstruction, both views use the original full 10-second ECG as target:
+
+- `target1`: original 10-second ECG
+- `target2`: original 10-second ECG
+
+The reconstruction decoder receives a small view identifier:
+
+- `view_id=0`: the tokens came from the first half
+- `view_id=1`: the tokens came from the second half
+
+This lets the decoder reconstruct a 10-second signal from a 5-second view while the retrieval embedding stays unchanged.
+
+Use:
+
+```bash
+python main.py --data-root data --augment-mode temporal_split --sequence-length 2500 --device cuda
+```
 
 #### Default Mode (`--augment-mode default`)
-Uses synthetic transforms on two augmented versions of the same signal segment:
+Legacy mode using synthetic transforms on two augmented versions of the same signal segment:
 - Random Amplitude Scaling
 - Gaussian Noise
 - Baseline Wander (Sinusoidal)
 
-#### Temporal Split Mode (`--augment-mode temporal_split`)
-Divides a **10-second** ECG signal into two consecutive, non-overlapping **5-second** segments ($x_1$ and $x_2$). Each segment is then independently augmented using the default synthetic transforms.
+The current reconstruction decoder is configured for temporal split training, where a 5-second view reconstructs a 10-second target. Use `temporal_split` for the current model.
 
 #### PhysioNet Temporal Split Mode (`--augment-mode physionet_temporal_split`)
 Our primary strategy for realistic, morphology-preserving representation learning. It imposes three primary constraints on the augmentation process:
@@ -305,6 +333,7 @@ Our primary strategy for realistic, morphology-preserving representation learnin
 - **Views**:
     - **View 1 (Target)**: The filtered "clean" segment $x_1$.
     - **View 2 (Query)**: The filtered segment $x_2$ with added PhysioNet noise.
+- **Reconstruction target**: both views reconstruct the original full 10s ECG.
 
 To use this mode, ensure the noise files exist (run `python preproc/setup_noise.py`) and specify the directory:
 
@@ -438,12 +467,13 @@ It does the following:
 - Projection head:
   the global embedding is passed through a projection head for the global NT-Xent loss.
 - Decoder:
-  transformer tokens are decoded to reconstruct the original ECG.
+  transformer tokens are decoded by a view-conditioned reconstruction head. In temporal split mode, each 5-second view reconstructs the original 10-second ECG.
 
 In short:
 
 - local loss trains CNN morphology features
 - global loss trains the projection head on top of the transformer embedding
+- reconstruction loss trains the shared encoder through a training-only auxiliary decoder
 - retrieval uses the pre-head transformer global embedding
 
 ## Main Files
@@ -553,6 +583,8 @@ When using FAISS, the most important extra CLI parameters are:
 - GPU works if your PyTorch installation supports CUDA. Use `--device cuda`.
 - FAISS GPU support is separate from PyTorch CUDA support. `--faiss-use-gpu` only works with a GPU-enabled FAISS build.
 - Reconstruction is done from the full transformer token sequence, not from the pooled global embedding.
+- During temporal split training, reconstruction targets are the full 10-second ECG for both views.
+- During embedding and retrieval, the reconstruction decoder is skipped and does not affect FAISS embeddings.
 - Retrieval uses the normalized pre-head transformer global embedding by default.
 - The FAISS backend also uses the normalized pre-head transformer global embedding by default.
 - If the query ECG is also present in the reference index, it can retrieve itself as the nearest neighbor.

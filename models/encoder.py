@@ -77,7 +77,12 @@ class ECGContrastiveAutoencoder(nn.Module):
             dropout=config.dropout,
         )
 
-    def forward(self, x: torch.Tensor) -> EncoderOutputs:
+    def forward(
+        self,
+        x: torch.Tensor,
+        view_id: int | None = None,
+        compute_reconstruction: bool = True,
+    ) -> EncoderOutputs:
         if x.ndim != 3:
             raise ValueError(f"Expected input with shape [batch, leads, time], got {tuple(x.shape)}.")
         cnn_features = self.cnn(x)
@@ -85,7 +90,11 @@ class ECGContrastiveAutoencoder(nn.Module):
         transformer_tokens = self.transformer(cnn_features.transpose(1, 2))
         global_embedding = self.global_normalization(transformer_tokens.mean(dim=1))
         global_projection = self.projection_head(global_embedding)
-        reconstruction = self.decoder(transformer_tokens)
+        reconstruction = (
+            self.decoder(transformer_tokens, view_id=view_id)
+            if compute_reconstruction
+            else torch.empty(0, device=x.device, dtype=x.dtype)
+        )
         return EncoderOutputs(
             cnn_features=cnn_features,
             local_embedding=local_embedding,
@@ -96,7 +105,7 @@ class ECGContrastiveAutoencoder(nn.Module):
         )
 
     def embed(self, x: torch.Tensor, embedding_type: str = "global", normalize: bool = True) -> torch.Tensor:
-        outputs = self.forward(x)
+        outputs = self.forward(x, compute_reconstruction=False)
         if embedding_type in {"retrieval", "global"}:
             embedding = outputs.global_embedding
         elif embedding_type == "projection":

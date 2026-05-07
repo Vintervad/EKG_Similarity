@@ -79,8 +79,8 @@ class ContrastiveAutoencoderTrainer:
         view1, view2, target1, target2 = self._prepare_batch(batch)
         self.model.train(train)
         with torch.set_grad_enabled(train):
-            outputs_view1 = self.model(view1)
-            outputs_view2 = self.model(view2)
+            outputs_view1 = self.model(view1, view_id=0)
+            outputs_view2 = self.model(view2, view_id=1)
             losses = self.objective(outputs_view1, outputs_view2, target1, target2)
 
             if train:

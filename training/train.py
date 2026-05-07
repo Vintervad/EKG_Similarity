@@ -37,7 +37,7 @@ class TrainConfig:
     save_every_epoch: bool = True
     early_stopping_patience: int | None = 10
     early_stopping_min_delta: float = 0.0
-    augment_mode: str = "default"
+    augment_mode: str = "temporal_split"
     physionet_noise_dir: str = "physionet_data"
     physionet_target_snr: float = 5.0
 
@@ -223,7 +223,7 @@ def build_trainer(
     device: str = "cpu",
     learning_rate: float = 1e-3,
     weight_decay: float = 1e-4,
-    augment_mode: str = "default",
+    augment_mode: str = "temporal_split",
     physionet_noise_dir: str = "physionet_data",
     physionet_target_snr: float = 5.0,
     sequence_length: int = 2500,

@@ -27,7 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--augment-mode",
         type=str,
-        default="default",
+        default="temporal_split",
         choices=["default", "physionet", "temporal_split", "physionet_temporal_split"],
     )
     parser.add_argument("--physionet-noise-dir", type=str, default="physionet_data")

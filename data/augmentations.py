@@ -345,16 +345,16 @@ class TemporalSplitTwoViewAugmentor:  # Augment an ECG signal into two views: fi
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         # x is expected to be [..., 2 * split_length] (e.g., 5000 samples for 10s at 500Hz)
         # We split into two consecutive, non-overlapping segments of split_length
+        target = x[..., : 2 * self.split_length]
         if x.size(-1) < 2 * self.split_length:
-            # Fallback if signal is too short: return two augmented versions of the same (padded) segment
             x_view = x[..., : self.split_length]
-            return self.augment(x_view), self.augment(x_view), x_view, x_view
+            return self.augment(x_view), self.augment(x_view), target, target
 
         x1 = x[..., : self.split_length]  # First split of the signal
         x2 = x[
             ..., self.split_length : 2 * self.split_length
         ]  # Second split of the signal
-        return self.augment(x1), self.augment(x2), x1, x2
+        return self.augment(x1), self.augment(x2), target, target
 
 
 class PhysioNetTemporalSplitTwoViewAugmentor:  # Augment an ECG signal into two views: filtered and noisy by splitting the signal into two parts
@@ -376,6 +376,7 @@ class PhysioNetTemporalSplitTwoViewAugmentor:  # Augment an ECG signal into two 
     def __call__(  # Augment an ECG signal into two views: filtered and noisy by splitting the signal into two parts
         self, x: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        target = x[..., : 2 * self.split_length]
         if (
             x.size(-1) < 2 * self.split_length
         ):  # If the signal is shorter than 2 * split_length, pad it to split_length
@@ -384,8 +385,8 @@ class PhysioNetTemporalSplitTwoViewAugmentor:  # Augment an ECG signal into two 
             return (
                 filtered,
                 self.noise(filtered),
-                x_view,
-                x_view,
+                target,
+                target,
             )  # Return the filtered and noisy views, and the original view
 
         x1 = x[..., : self.split_length]  # Take the first split_length samples
@@ -401,4 +402,4 @@ class PhysioNetTemporalSplitTwoViewAugmentor:  # Augment an ECG signal into two 
         # View 2 is the "noisy" augmented view (Noise invariance constraint)
         v2_noisy = self.noise(v2_clean)
 
-        return v1_clean, v2_noisy, x1, x2
+        return v1_clean, v2_noisy, target, target
